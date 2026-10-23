@@ -1,0 +1,30 @@
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+Rplots.pdf
+
+# Scratch folders of review runs
+_scratch_*/
+**/_scratch_*/
+**/_verify_*/
+
+# Rebuildable data (scripts 03-04 rebuild them from the WHO raw files, which stay in Eu40_APC)
+data/derived/*.rds
+**/cache/
+cache_feasibility/
+
+# Large rebuildable outputs (> 5 MB; rerun the scripts in the README run order)
+report/*.html
+manuscript/**/*.pdf
+Study/output/replication/series.csv
+Study/output/apc/projection.csv
+Study/output/apc/proj_rates.csv
+output/premature/rates_age.csv
+
+# Data extracts and archives of the ECIS example (ECIS data are downloaded by the user)
+examples/cervix_ecis/data/
+examples/*.zip
+
+# Copyrighted papers
+**/literature/*.pdf

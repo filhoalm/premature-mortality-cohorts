@@ -1,0 +1,61 @@
+```{r setup-data, include = FALSE}
+## Section 1, the data: child of code/08_report.Rmd (the report) and of docs/who_mortality_harmonisation.Rmd (the web page,
+## docs/index.html, code/16_docs.R), followed in both by Section 1.1 (code/08_who_processing.Rmd). Every number is computed
+## here from the outputs, with the helpers and data-build objects of code/08_helpers.R
+aw <- rd("data_build", "area_windows.csv")
+ek <- aw[area == "Eastern Asia" & alternative == "without KOR"]; cv15 <- aw[alternative %like% "^covers"]
+dl <- 10                                                                             # alternatives shown: window longer by >= dl years
+wl <- merge(aw[alternative %like% "^without"], ai[, .(area, n0 = n_years)], by = "area")[n_years - n0 >= dl][order(match(area, ai$area))]
+acq <- merge(acn, aq, by = "iso3")
+cyw <- cy[include == TRUE][acn, on = .(iso3, year >= y0, year <= y1), nomatch = 0]  # country-years in the area windows
+## seams inside the area windows (sm, pyc and sw in code/08_helpers.R): step = r / (WHO/WPP in the adjacent WHO year) - 1, NA
+## where the WHO year is outside the window
+sws <- sw[, step := r / r0 - 1][!is.na(step)][order(-abs(step))]
+```
+
+# 1 Data
+
+**Source.** `r who_src`: deaths by country, year, sex, age group and cause for ICD-7 to ICD-10, and WHO population (`mort_pop`), read without modification. Cause groups and their ICD-7 to ICD-10 codes are in `data/dict/who_cause_groups.csv`; NCD4 = cancer (C00-C97) + cardiovascular diseases (I00-I99) + diabetes (E10-E14) + chronic respiratory diseases (J30-J98). Person-years are the WHO population where it exists, completed by the population of the `r wpp_src`, calibrated to WHO by sex and age; see Population below.
+
+**Areas and countries.** The `r nrow(ad)` WHO country codes are mapped to ISO3 and to UN M49 numeric codes and names of the country, region, sub-region and intermediate region (`data/dict/areas.csv`; historical M49 codes for former entities); `r ad[include == TRUE, .N]` are eligible (former entities, parts of countries, overlapping codes, codes without national data and countries rated Low by the WHO data-quality assessment are excluded). The data hold `r fn(nrow(cy))` country-years with deaths (`r uniqueN(cy$who_code)` codes, `r rng(cy$year)`). The area- and country-level outputs carry the UN M49 codes next to the names (`region_code`, `area_code`; `m49_code` for countries), except `who_deaths.rds`, `who_checks.rds` and `list_transitions.csv` (WHO code only), `respiratory_checks.csv` (WHO code and ISO3) and `profiles.csv` (`area_code` only); `data/dict/areas.csv` links the WHO code to ISO3 and the M49 codes (NOTES item 87).
+
+**WHO data-quality assessment.** The WHO assessment of the mortality data (estican `data/WHO_mortality_data_quality.csv`, read-only; NOTES item 85) rates each country by usability = completeness of death registration x (1 - the share of ill-defined or non-specific causes): `r ad[!is.na(who_quality), .N]` codes are rated: `r andl(ad[!is.na(who_quality), .N, by = who_quality][order(match(who_quality, c("High", "Medium", "Low"))), sprintf("%d %s", N, who_quality)])`. The `r ad[who_quality == "Low", .N]` countries rated Low are not eligible: `r andl(ad[who_quality == "Low", sort(name)])`. Of the `r nrow(acq)` area countries, `r andl(acq[, .N, by = .(q = fifelse(is.na(who_quality), "not rated", who_quality))][order(match(q, c("High", "Medium", "not rated"))), sprintf("%d are %s", N, fifelse(q == "not rated", q, paste("rated", q)))])` (Table 1.3). The rating is one recent assessment applied to every year, so the year-level ill-defined rule below is kept.
+
+**Population.** Person-years are the WHO population (`mort_pop`, ages harmonised as the deaths, gaps of 1-3 years interpolated) where it exists. Every other cell (country, year, sex and age) of a country-year with deaths takes the UN WPP population times the WHO/WPP ratio of that sex and age, averaged over the 3 nearest WHO years on each side, held beyond the first or last WHO year and interpolated between two seams ('WPP calibrated'), so that the series follows the WHO level and keeps the territory covered by the WHO deaths; countries without any WHO population take WPP as published ('WPP'; NOTES item 84). Table 1.1 gives the source at ages 30-69. At the seams, the calibration ratio of the cells at 30-69 lies between `r f3(min(sm$ratio))` and `r f3(max(sm$ratio))` (median `r f3(median(sm$ratio))`); `r fn(sm[, sum(flag)])` of `r fn(nrow(sm))` cells lie outside 0.9-1.1, `r sm[iso3 %in% acn$iso3, sum(flag)]` of `r sm[iso3 %in% acn$iso3, .N]` in the countries of the areas (`output/data_build/population_seams.csv`). The 3-year mean ratio, not the ratio of the WHO year next to the seam, is carried across the seam, so the series steps there by the deviation of that WHO year from the mean: with step = calibrated/WPP in the WPP year over WHO/WPP in the adjacent WHO year, minus 1 (ages 30-69, both sexes), |step| exceeds 2% at `r sws[abs(step) > 0.02, .N]` of the `r nrow(sws)` seams inside the area windows (`r sws[abs(step) > 0.02, andl(sprintf("%s %+.1f%% (WHO %d, WPP %d)", country, 100 * step, year_who, year_wpp))]`) and is at most `r fx(100 * sws[abs(step) <= 0.02, max(abs(step))], 1)`% at the others.
+
+```{r t-pop}
+pt <- merge(cy[, .(n = .N), by = .(s = ps(py_source))], cy[usable == TRUE, .(u = .N), by = .(s = ps(py_source))], by = "s", all = TRUE)
+pt <- merge(pt, cyw[, .(w = .N), by = .(s = ps(py_source))], by = "s", all = TRUE)[order(-n)]
+kt(pt[, .(`Person-years at 30-69` = s, `Country-years with deaths` = fn(n), Usable = fn(fifelse(is.na(u), 0, u)), `In the area windows` = fn(fifelse(is.na(w), 0, w)))],
+   "Table 1.1. Country-years by source of the person-years at ages 30-69: WHO population, WHO interpolated over gaps of 1-3 years, UN WPP calibrated to WHO, UN WPP as published, mixed (some ages from each) or none (output/data_build/country_coverage.csv)")
+```
+
+**Usability rule** (Results 1-2). A country-year is usable when person-years and the deaths of every needed cause group are available at every age 30-69 for both sexes, the codes of the WHO List add up to the all-cause code, and ill-defined causes are at most `r sub(".*> ", "", ill_lab)` of deaths at 30-69. `r fn(cy[usable == TRUE, .N])` of `r fn(nrow(cy))` country-years are usable, in `r c1[n_usable > 0, .N]` countries (Table 1.2). COPD is not part of the rule; the years where it is isolable are flagged (`copd_ok`) and used in Result 3 only.
+
+**Windows.** A country's usable series is its longest run of consecutive usable years, and the `r c1[include == TRUE & n_run >= min_run, .N]` eligible countries with at least `r min_run` usable years are candidates. Each area is a UN M49 sub-region: among the windows of at least `r max(ai$min_len)` years`r if (ai[, any(min_len < max(min_len))]) sprintf(" (or of the longest usable run of the candidates where that is shorter: %s)", ai[min_len < max(min_len), andl(sprintf("%s, %d years", area, min_len))]) else ""`, the window and the candidates covering all of it with the largest person-years at 30-69; deaths and person-years are summed over these countries. `r nrow(ai)` areas with `r sum(ai$n_countries)` countries result (Table 1.3, Figure D1). Because the rule maximises person-years, a large country can shorten a window: leaving out one country would lengthen it by at least `r dl` years in `r andl(wl[, sprintf("%s (without %s: %s %s, %s of the person-years)", area, sub("without ", "", alternative), countries, window, f2(py_vs_chosen))])`. The windows cover `r base` in `r ai[covers_base_year == TRUE, .N]` areas, not in `r andl(ai[covers_base_year == FALSE, sprintf("%s (ends %d)", area, y1(window))])`; the only alternative covering it is `r cv15[, andl(sprintf("%s %s %s (%s of the person-years)", area, countries, window, f2(py_vs_chosen)))]`, not used. Eastern Asia without Korea (`r ek$countries` `r ek$window`, `r f2(ek$py_vs_chosen)` of the person-years) starts `r ai[area == "Eastern Asia", y0(window)] - y0(ek$window)` years earlier and is a supplementary area in Result 2.
+
+```{r t-usable}
+u <- cy[, .(n = .N), by = reason][order(reason != "usable", -n)]
+kt(u[, .(Status = reason, `Country-years` = fn(n), `%` = f1(100 * n / sum(n)))],
+   sprintf("Table 1.2. Country-years with deaths (%s) by usability: usable or first failing criterion (output/data_build/country_coverage.csv)", rng(cy$year)))
+```
+
+```{r t-areas}
+nm <- aq[, setNames(sprintf("%s (%s %d, %s)", name, iso3, m49_code, fifelse(is.na(who_quality), "not rated", who_quality)), iso3)]
+kt(ai[, .(Region = sprintf("%s (%d)", region, region_code), Area = sprintf("%s (%d)", area, area_code), Countries = vapply(strsplit(countries, " "), function(i) paste(nm[i], collapse = ", "), ""),
+          Window = window, Years = n_years, `Person-years 30-69 (millions)` = formatC(py_3069 / 1e6, format = "f", digits = 1, big.mark = ","),
+          `WPP calibrated (%)` = p1(share_py_wpp_calibrated + share_py_wpp), `NCD4 deaths 30-69 (thousands)` = fn(deaths_ncd4_3069 / 1e3),
+          `Ill-defined 30-69 (%)` = p1(ill_share_3069), `Covers base year` = fifelse(covers_base_year, "yes", "no"))],
+   sprintf("Table 1.3. Areas: UN M49 region and sub-region (numeric code), countries (WHO name, ISO3, UN M49 code, WHO data-quality rating) and windows; person-years, share of the person-years from UN WPP and deaths for both sexes over the window; base year %d (output/data_build/areas_included.csv, data/dict/areas.csv)", base))
+```
+
+```{r fig-d1, fig.cap = "Figure D1. Usable years and area series by country (output/data_build/figures/D1_coverage.png; PDF alongside)."}
+fig("data_build", "D1_coverage.png")
+```
+
+**Data caveats.**
+
+- `r cy[interpolated == TRUE, .N]` country-years are interpolated across gaps of 1-3 years and `r cy[composite == TRUE, .N]` are composites (Germany before 1990 = FRG + GDR; United Kingdom 2000 = its parts); both count as usable and are marked in D1, as are the years with WPP person-years.
+- Territory changes inside windows: `r paste(ai[!is.na(territory_changes), territory_changes], collapse = "; ")`. Deaths and population refer to the same territory, so rates stay consistent; none of these changes falls in WPP years.
+- Ill-defined causes are `r p1(min(ai$ill_share_3069))`% (`r ai[which.min(ill_share_3069), area]`) to `r p1(max(ai$ill_share_3069))`% (`r ai[which.max(ill_share_3069), area]`) of deaths at 30-69 over the windows and are not redistributed.
+- COPD (J40-J47) is isolable only in some WHO Lists (`copd_ok` years); where too few such years remain, the COPD lag is not assessable (Section 4).

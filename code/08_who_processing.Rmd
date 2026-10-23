@@ -1,0 +1,508 @@
+```{r setup-who, include = FALSE}
+## Section 1.1, how the WHO Mortality Database was processed: child of code/08_report.Rmd (the report) and of
+## docs/who_mortality_harmonisation.Rmd (the web page, docs/index.html, code/16_docs.R), after Section 1 (code/08_data.Rmd).
+## Every number is computed here from the outputs, with the helpers and data-build objects of code/08_helpers.R; links follow
+## link_base (report: relative to report/; page: GitHub, and the code lines of the data build inside the page, lnl()); line
+## numbers are read from the current scripts at render time (lnr()); the page alone lists the Code lines by file (cdl())
+lkt <- if (gh()) paste("File names open the files in the GitHub repository (main branch), for readers with access to it. The line numbers of the data-build scripts open their code in the appendix of this page, the others the script on GitHub at those lines; they are read from the scripts each time this page is rendered.",
+                       "The `.rds` files (R data, read with `readRDS()`) are not in the repository (rebuilt by the scripts); their columns are described in", paste0(lk("data/derived/dictionary.csv"), ".")) else
+  paste("The links work when the report is opened from its folder in the project (`report/` next to `code/`), not from a copy elsewhere. They open the whole file: go to the line numbers shown, which are read from the scripts each time the report is rendered.",
+        "Links to `.rds` files (R data, read with `readRDS()`) download the file; their columns are described in", paste0(lk("data/derived/dictionary.csv"), "."))
+stp <- c(raw = "Raw files", countries = "Countries and data quality", ages = "Ages", causes = "Causes across ICD revisions", coding = "Coding changes",
+         ill = "Ill-defined causes", gaps = "Gaps and interpolation", peaks = "Peaks", pop = "Population", areas = "From countries to areas")
+cm  <- setnames(rbindlist(lapply(list(                                               # step, script, what, first line, last line, files written
+  c("raw", "code/functions_pm.R", "raw files and release (`who_raw`, `who_src`, `who_files`, `who_xl`)", "who_raw   <-", "who_xl    <-", NA),
+  c("raw", "code/03_who_deaths.R", "national rows only, `keep()`", "keep <- function", "}", NA),
+  c("raw", "code/03_who_deaths.R", "raw files read once and cached", "fx    <- c(file.path(who_raw", "saveRDS(dr, f_raw)", NA),
+  c("raw", "code/01_areas.R", "years with national and regional rows per code", "yc <- c(\"Country\"", "cc[is.na(mort_years)", "data/dict/areas.csv"),
+  c("countries", "code/01_areas.R", "WHO codes to ISO3 and UN M49", "cc <- fread(file.path(who_raw, \"mort_country_codes\"", "cc[as.character(who_code) %in% names(m49f)", NA),
+  c("countries", "code/01_areas.R", "WHO data-quality rating", "q  <- fread(who_q", "who_usability = Usability", NA),
+  c("countries", "code/01_areas.R", "years filled by composites", "uk  <- setdiff", "de  <- c(", NA),
+  c("countries", "code/01_areas.R", "eligibility (`include`, `reason`)", "ex <- c(", "who_usability, who_completeness, who_ill_defined))]", NA),
+  c("countries", "code/01_areas.R", "territory changes", "chg <- list(", "change_years = vapply", "data/dict/areas.csv"),
+  c("countries", "code/03_who_deaths.R", "composites: parts added", "cm <- areas[!is.na(composite)]", "}", NA),
+  c("ages", "code/functions_pm.R", "`age18()`: WHO age formats to 18 groups, merged groups missing", "age18 <- function", "}", NA),
+  c("ages", "code/03_who_deaths.R", "unknown sex dropped", "d  <- age18(d[Sex %in% 1:2]", NA, NA),
+  c("ages", "code/03_who_deaths.R", "unknown age shared out within each group", "# unknown age, by group", NA, NA),
+  c("ages", "code/03_who_deaths.R", "all causes by age = sum of the exclusive groups", "pt <- x[group %chin% c(core, \"other\")", "for (a in ac) { p <- al", "data/derived/who_deaths.rds"),
+  c("causes", "code/02_cause_groups.R", "cause-group dictionary", "eu <- fread", "fwrite(grp", "data/dict/who_cause_groups.csv"),
+  c("causes", "code/03_who_deaths.R", "code ranges expanded, `expand()`", "expand <- function", "gexp  <- grp", NA),
+  c("causes", "code/03_who_deaths.R", "groups by age, missing groups, 'other', NCD4: `chunk()`", "chunk <- function", "}", NA),
+  c("causes", "code/03_who_deaths.R", "all-cause code checked against the documentation", "## ----- all-cause code per List", "bad <- tc[ok == FALSE]", NA),
+  c("causes", "code/03_who_deaths.R", "checks: six groups add up (by construction), chapter codes add up to the all-cause code, 'other' not negative", "## ----- checks by (country, year, sex)", "saveRDS(cys", "data/derived/who_checks.rds"),
+  c("causes", "code/03_who_deaths.R", "codes shared by two groups", "## ----- non-exclusive groups", "fwrite(ov,", "output/data_build/group_overlap.csv"),
+  c("causes", "code/04_area_series.R", "sub-groups capped at their parent group (IHD and stroke scaled together)", "## ----- sub-groups clamped", "dt[!is.na(d), deaths := d]", NA),
+  c("causes", "code/04_area_series.R", "COPD flag `copd_ok`", "copd_ok = !anyNA(deaths[group == \"copd\"])", NA, NA),
+  c("coding", "code/03_who_deaths.R", "List transitions, 15% rule", "## ----- List transitions", "fwrite(tj,", "output/data_build/list_transitions.csv"),
+  c("coding", "code/04_area_series.R", "transitions inside the area windows", "## ----- List transitions inside the windows", "share_old, share_new, jump_share, flag, count_jump)]", "output/data_build/window_transitions.csv"),
+  c("ill", "code/03_who_deaths.R", "`ill_defined`, one of the exclusive groups", "core    <- c(", NA, NA),
+  c("ill", "code/03_who_deaths.R", "ill-defined share at 30-69", "ill <- dt[age %in% a3069", "ill_share_3069 := ill_defined / all]", "data/derived/who_checks.rds"),
+  c("ill", "code/04_area_series.R", "limit `ill_max`", "ill_max <- arg(", NA, NA),
+  c("ill", "code/04_area_series.R", "ill-defined criterion of the usability rule", "is.na(ill) | ill > ill_max", NA, "output/data_build/country_coverage.csv"),
+  c("ill", "code/09_shares_generation.R", "Module B 'redistributed' variant (CSV only)", "r  <- s[variant == \"observed\" & cause_group != \"ill_defined\"]", "sc <- od(rbind(shr(copy(s),", "output/shares_world/shares_cohort.csv"),
+  c("ill", "Study/code/02_replication.R", "F8, ill-defined deaths redistributed pro rata", "il <- dcast(sr[set == \"main\"", "x  <- rbind(x, il[", "Study/output/replication/sensitivity.csv"),
+  c("gaps", "code/functions_pm.R", "`gaps()`", "gaps <- function", "}", NA),
+  c("gaps", "code/functions_pm.R", "`interp()`", "interp <- function", "}", NA),
+  c("gaps", "code/03_who_deaths.R", "deaths of every group interpolated", "dt  <- pick(\"age\")", "iy  <- unique(ip[", NA),
+  c("gaps", "code/03_who_deaths.R", "WHO population interpolated", "pop <- rbind(pw[, py_source := \"WHO\"]", NA, NA),
+  c("gaps", "code/04_area_series.R", "interpolated years count as usable, flagged", "lr <- u[, longest_run(year, usable)", "cr <- merge(cr, u[cr, on", "output/data_build/country_coverage.csv"),
+  c("gaps", "code/07_tobacco_lag.R", "missing area cells interpolated before a model fit (also scripts 11-13)", "fl <- merge(interp(d, id, NULL, \"cases\")", NA, NA),
+  c("peaks", "code/05_cohort_sdg34.R", "F1 period indicator by area, sex and year", "pe <- r[, .(p_period", NA, "output/sdg34/period.csv"),
+  c("peaks", "code/04_area_series.R", "flags of Figure D1 (interpolated, composite, WPP years)", "## ----- figure D1", "save_both(p, file.path(dir_out, \"figures\", \"D1_coverage\")", "output/data_build/figures/D1_coverage.png"),
+  c("pop", "code/03_who_deaths.R", "WHO population, ages harmonised", "pw <- fread(file.path(who_raw, \"mort_pop\"", "setnames(pw, c(\"Country\", \"Year\", \"Sex\")", NA),
+  c("pop", "code/03_who_deaths.R", "UN WPP calibrated to WHO by sex and age", "un <- merge(areas[!is.na(m49_code)", "stopifnot(!anyDuplicated(pop", NA),
+  c("pop", "code/03_who_deaths.R", "population sources and seams", "## ----- population sources", "fwrite(smo,", "output/data_build/population_sources.csv;output/data_build/population_seams.csv"),
+  c("areas", "code/04_area_series.R", "parameters `ill_max`, `min_run`, `min_win`", "ill_max <- arg(", "min_win <- arg(", NA),
+  c("areas", "code/04_area_series.R", "usable country-years, first failing criterion", "## ----- usable country-years", "u[, usable := reason == \"usable\"]", "output/data_build/country_coverage.csv"),
+  c("areas", "code/functions_pm.R", "`longest_run()`", "longest_run <- function", "}", NA),
+  c("areas", "code/04_area_series.R", "candidates", "## ----- usable series per country", "cr[, candidate :=", NA),
+  c("areas", "code/04_area_series.R", "windows and country sets with the largest person-years", "## ----- area windows", "cr[status == \"run does not cover the area window\"", "output/data_build/areas_included.csv;output/data_build/area_windows.csv"),
+  c("areas", "code/04_area_series.R", "area series = sums over the countries", "## ----- area and country series", "stopifnot(!as[age %in% a3069", "data/derived/country_series.rds;data/derived/area_series.rds")),
+  as.list)), c("sec", "f", "what", "a", "b", "out"))
+cm[, c("i", "j") := transpose(mapply(lnr, f, a, b, SIMPLIFY = FALSE))][, ln := fifelse(j > i, sprintf("lines %d-%d", i, j), sprintf("line %d", i))]
+## Code line of a part: the report runs the files on in one sentence, the page lists them (one item per file); s2: a sentence after it
+cdl <- function(s, s2 = "") { x <- cm[sec == s]; o <- unique(na.omit(unlist(strsplit(x$out, ";")))); d <- if (length(o)) paste(lkd(o), collapse = ", ") else ""
+  if (gh()) return(paste0("*Code:*\n\n", paste0("- ", x[, .(t = paste(sprintf("%s, %s", what, lnl(f, i, j, ln)), collapse = "; ")), by = f][, sprintf("%s: %s", lk(f), t)], collapse = "\n"),
+                          if (nzchar(d)) paste0("\n- Details: ", d) else "", "\n\n", s2, "\n"))
+  paste0(sprintf("*Code:* %s%s.", x[, .(t = paste(sprintf("%s (%s)", what, lnl(f, i, j, ln)), collapse = "; ")), by = f][, paste(sprintf("%s: %s", lk(f), t), collapse = "; ")],
+                 if (nzchar(d)) paste0(". Details: ", d) else ""), if (nzchar(s2)) paste0(" ", s2) else "") }
+ntl <- if (gh()) lk("NOTES.md") else "`NOTES.md` (shown in Section 8)"; stl <- if (gh()) lk("Study/NOTES.md") else "`Study/NOTES.md`"
+cyy <- merge(cy[include == TRUE], acn, by = c("area", "iso3"))[year >= y0 & year <= y1]          # country-years in the windows, with their years
+## data flow from the WHO files to the area windows (eligible codes first, then the usability rule; the counts are the same in
+## either order)
+xrs <- function(r) fcase(r %like% "^WHO data", "rated Low by WHO", r %like% "^Part", "parts of countries", r %like% "^Former", "former entities", default = "other")
+ne  <- merge(cy[include == FALSE], ad[, .(who_code, r = xrs(reason))], by = "who_code")[, .(n = .N, k = uniqueN(who_code)), by = r][order(-n)]
+nu  <- cy[include == TRUE & usable == FALSE, .N, by = reason][order(-N)]
+cn1 <- c1[include == TRUE & n_run >= min_run]; cnr <- c1[status %like% "does not cover"]; srn <- c1[status %like% "run <"]
+n0  <- ad[mort_years == 0]; n0r <- n0[!is.na(subnational_mort), name]                  # codes without national rows; with regional rows only
+stopifnot(!any(n0$include))
+flw <- data.table(s = c("WHO files", "Gaps filled", "Eligible codes", "Usable years", "Long series", "Area windows"),
+  k = c("Country-years with national deaths in the WHO files",
+        sprintf("Plus missing years: gaps of 1-3 years filled and composite years (%s)", ad[!is.na(composite), andl(sprintf("%s %s", name, composite_years))]),
+        "One code per territory; countries rated Low by WHO left out",
+        sprintf("Every needed cause group at every age 30-69, population known, WHO chapter totals equal to the all-cause total ('codes add up'), ill-defined at most %s", sub(".*> ", "", ill_lab)),
+        sprintf("Each country's longest unbroken run of usable years, if at least %d years", min_run),
+        sprintf("Years inside the window of the country's area (%d areas)", nrow(ai))),
+  w = c(ad[mort_years > 0, .N], uniqueN(cy$who_code), uniqueN(cy[include == TRUE, who_code]), uniqueN(cy[include == TRUE & usable == TRUE, who_code]), nrow(cn1), uniqueN(cyy$who_code)),
+  n = c(sum(ad$mort_years), nrow(cy), cy[include == TRUE, .N], cy[include == TRUE & usable == TRUE, .N], sum(cn1$n_run), nrow(cyy)),
+  x = c(sprintf("Not used: %d codes without national rows (%d of them with regional rows only: %s)", nrow(n0), length(n0r), andl(n0r)),
+        sprintf("Added: %s filled years and %s composite years", fn(cy[interpolated == TRUE & composite == FALSE, .N]), fn(cy[composite == TRUE, .N])),
+        paste("Left out:", ne[, andl(sprintf("%s %s (%d codes)", r, fn(n), k))]),
+        paste("Left out:", nu[, andl(sprintf("%s %s", reason, fn(N)))]),
+        sprintf("Left out: %s years of the %d countries with shorter runs and %s usable years outside the longest run", fn(sum(srn$n_usable)), nrow(srn),
+                fn(cy[include == TRUE & usable == TRUE, .N] - sum(srn$n_usable) - sum(cn1$n_run))),
+        sprintf("Left out: %s years of the %d candidates whose run does not cover their area's window and %s years outside the window", fn(sum(cnr$n_run)), nrow(cnr),
+                fn(sum(cn1$n_run) - sum(cnr$n_run) - nrow(cyy)))))
+## WHO Lists (documentation PDF p.9-10): observed country-years, groups without a code
+lsd <- c(`07A` = "ICD-7, List A", `07B` = "ICD-7, List B", `08A` = "ICD-8, List A", `08B` = "ICD-8, List B", `09A` = "ICD-9, Basic Tabulation List", `09B` = "ICD-9, Basic Tabulation List",
+         `09N` = "ICD-9, special list of former USSR states", `101` = "ICD-10, Mortality Tabulation List 1", `103` = "ICD-10, 3 characters", `104` = "ICD-10, 4 characters",
+         `10M` = "ICD-10, 3 and 4 characters", UE1 = "ICD-10, special list for Portugal")
+cgd <- fread(here::here("data", "dict", "who_cause_groups.csv"), colClasses = c(list = "character", codes = "character"))
+gn  <- c("lung", "ihd", "stroke", "diabetes", "crd", "copd")
+lst <- merge(cy[interpolated == FALSE & composite == FALSE, .(k = uniqueN(who_code), y = rng(year), n = .N, e = sum(include), u = sum(include & usable)), by = list],
+             cgd[, .(na = andl(cn[setdiff(gn, group)])), by = list], by = "list")[order(match(list, names(lsd)))]
+chk <- readRDS(here::here("data", "derived", "who_checks.rds")); frm <- unique(chk[sex > 0 & !is.na(frmat), .(who_code, year, frmat)])
+fru <- merge(cy[, .(who_code, year, usable)], frm, by = c("who_code", "year"))[, g := fcase(frmat %in% c("00", "01", "02"), "a", frmat %in% c("03", "04", "05"), "b", frmat == "NS", "ns", default = "c")]
+frw <- merge(cyy[, .(who_code, iso3, year)], frm, by = c("who_code", "year"), all.x = TRUE)
+ltr <- rd("data_build", "list_transitions.csv"); tr <- unique(ltr[, .(who_code, year_old, year_new)])
+cn4 <- c(ncd4 = "NCD4", cn)
+## checks of 03 (who_checks.rds): the six groups add up by construction; chapter totals vs all-cause code; 'other' not negative
+chf <- unique(chk[sex > 0 & chapters_equal == FALSE, .(who_code, country, year)])[, .(y = runs_txt(year)), by = .(who_code, country)]
+cna <- cy[reason == "codes do not add up", .(y = runs_txt(year), n = .N), by = .(who_code, country, include)]
+ong <- chk[sex > 0, sum(other_raw_min < 0, na.rm = TRUE) + sum(other_min < -1e-9, na.rm = TRUE)]
+## comparability choices of the dictionary (rows whose source starts 'empirical correction')
+glb <- c(cvd = "cardiovascular diseases", liver = "liver diseases")
+emp <- cgd[source %like% "^empirical", .(w = sub("^empirical correction: ([^(;]*[^ (;]).*", "\\1", source[1]), l = andl(list), k = .N), by = group]
+## WHO data-quality assessment: eligible codes rated, in the file without a rating, or not in the file
+qi  <- fread(who_q, select = "country_iso3")$country_iso3
+qe  <- ad[include == TRUE, .(name, q = fcoalesce(who_quality, fifelse(iso3 %in% qi, "in it without a rating", "not in the WHO assessment")))]
+## Study: implied area-level effect of the List changes (lt_effect of probability.csv; threshold lt_min from its dictionary)
+sdc <- fread(here::here("Study", "output", "replication", "dictionary.csv"))
+ltm <- num1(sub(".*>= ", "", sdc[file %like% "probability.csv" & variable == "lt_effect", description]))
+ltp <- fread(here::here("Study", "output", "replication", "probability.csv"), select = c("set", "area", "cause", "lt_effect"))[set == "main" & lt_effect >= ltm, .(e = max(lt_effect)), by = .(area, cause)]
+## ill-defined causes by area (window, first and last year, highest) and the Study's F8 sensitivity analysis
+ilt <- dcast(asa[age %in% a3069 & group %chin% c("all", "ill_defined"), .(d = sum(deaths)), by = .(area, year, group)], area + year ~ group, value.var = "d")[
+  order(year), .(s0 = ill_defined[1] / all[1], s1 = ill_defined[.N] / all[.N], sm = max(ill_defined / all), ym = year[which.max(ill_defined / all)]), by = area]
+sv  <- fread(here::here("Study", "output", "replication", "sensitivity.csv"))[sex == 0 & variant %in% c("main", "ill_defined")]
+f8  <- dcast(sv, area + cause ~ variant, value.var = c("pc", "year", "q2000"))[, d := pc_ill_defined - pc_main]
+sst <- fread(here::here("Study", "output", "replication", "sets.csv"))[set == "main", .(area, st = countries)]
+ilw <- merge(merge(ai[, .(area, window, ill_share_3069, countries)], ilt, by = "area"), merge(f8[cause == "ncd4"], sst, by = "area"), by = "area")[order(match(area, ai$area))]
+ilw[, lev := q2000_ill_defined / q2000_main - 1]                                       # 2000 level, redistributed vs certified
+shr9 <- rd("shares_world", "shares_cohort.csv")[variant == "observed" & complete == TRUE & cause_group == "ill_defined" & window == "40-59", share]
+## one country holding most of an area's person-years at 30-69 (area windows)
+dmc <- merge(csi[group == "all" & age %in% a3069, .(py = sum(py)), by = .(area, iso3)][, .(iso3 = iso3[which.max(py)], s = max(py) / sum(py), k = .N), by = area],
+             aq[, .(iso3, name)], by = "iso3")[order(match(area, ai$area))]
+## F1 period indicator: year-to-year changes (percentage points). Every change of at least 1 point is in Table 1.7: in the
+## first episode row of its area (all areas for 'Several areas') whose years contain it, or in the last row (isolated falls,
+## checked against the flags of the build, not traced one by one). Evidence from the countries at ages 30-69 (area windows)
+pd  <- pe[order(area, sex, year)][, d := 100 * (p_period - shift(p_period)), by = .(area, sex)]
+pk  <- pd[abs(d) >= 1, .(area, year, sex, d)]
+cq  <- csi[age %in% a3069, .(d = sum(deaths), py = sum(py)), by = .(area, iso3, year, group)]
+cqs <- csi[age %in% a3069, .(d = sum(deaths), py = sum(py)), by = .(area, iso3, year, sex, group)]
+dpp <- function(a, y, s) sprintf("%+.2f", pd[area == a & year == y & sex == s, d])
+ppk <- function(a, s) pd[area == a & sex == s][which.max(p_period), sprintf("%s%% in %d", f1(100 * p_period), year)]
+vq  <- function(i, y, g = "all", v = "d") cq[iso3 == i & year %in% y & group == g][order(year), get(v)]
+pcq <- function(i, ya, yb, g = "all", v = "d") sprintf("%+.1f%%", 100 * (vq(i, yb, g, v) / vq(i, ya, g, v) - 1))
+rq  <- function(i, y, g = "all") fn(1e5 * vq(i, y, g) / vq(i, y, g, "py"))
+rpc <- function(i, ya, yb, g = "all") 100 * ((vq(i, yb, g) / vq(i, yb, g, "py")) / (vq(i, ya, g) / vq(i, ya, g, "py")) - 1)    # % change of a death rate
+vqs <- function(i, y, s, g = "ncd4", v = "d") cqs[iso3 == i & year %in% y & sex == s & group == g][order(year), get(v)]
+pcs <- function(i, ya, yb, s, g = "ncd4") sprintf("%+.1f%% (death rate %+.1f%%)", 100 * (vqs(i, yb, s, g) / vqs(i, ya, s, g) - 1),
+                                                  100 * ((vqs(i, yb, s, g) / vqs(i, yb, s, g, "py")) / (vqs(i, ya, s, g) / vqs(i, ya, s, g, "py")) - 1))
+shp <- function(i, y) cq[group == "all" & year == y & area == cq[iso3 == i, area[1]], p1(sum(py[iso3 == i]) / sum(py))]
+shq <- function(i, y) sprintf("%s%% of the area's person-years at 30-69 in %d", shp(i, y), y)
+jt  <- function(i, y, g) wt[iso3 == i & year_new == y & group %in% g, sprintf("List %s to %s: %s", list_old[1], list_new[1], andl(sprintf("%s share %+.0f%%", cn4[group], 100 * jump_share)))]
+gro <- function(i, y) { x <- cq[iso3 == i & group == "all"][order(year)][, g := 100 * (py / shift(py) - 1)][year %in% y, g]; sprintf("%+.1f%% to %+.1f%%", min(x), max(x)) }
+ccy <- function(i, y) cy[iso3 %in% i & year %in% y]
+nfl <- function(n) if (n == 0) "no filled year" else sprintf("%d filled years", n)
+fly <- function(i, y) { x <- ccy(i, y); sprintf("List %s, %s, population %s", andl(unique(x$list)),
+  if (x[, any(interpolated | composite)]) paste("filled", x[interpolated | composite, runs_txt(year)]) else "no filled year", andl(unique(x$py_source))) }
+acs <- ai[, .(iso3 = strsplit(countries, " ")[[1]]), by = area]
+fgs <- function(a, y) { i <- acs[area == a, iso3]; x <- ccy(i, (y - 1):y)                # flags of the build for a change from y - 1 to y
+  f <- c(wt[iso3 %in% i & year_new == y, if (.N) paste("List change in", andl(unique(country)))], x[interpolated | composite, if (.N) paste("filled year in", andl(unique(country)))],
+         x[, .(n = uniqueN(py_source)), by = country][n > 1, if (.N) paste("change of population source in", andl(country))])
+  if (length(f)) paste(f, collapse = "; ") else "no flag in any country of the area" }
+arq <- function(a, ya, yb) asa[area == a & age %in% a3069 & group == "all" & year %in% c(ya, yb), .(r = sum(deaths) / sum(py)), keyby = year][, sprintf("%+.1f%%", 100 * (r[2] / r[1] - 1))]
+cvs <- function(a, y) asa[area == a & year == y & age %in% a3069 & group %in% c("all", "covid"), p1(sum(deaths[group == "covid"]) / sum(deaths[group == "all"]))]
+ssa <- "Sub-Saharan Africa"; cas <- "Central Asia"; eeu <- "Eastern Europe"; was <- "Western Asia"; sas <- "Southern Asia"; lac <- "Latin America and the Caribbean"; sea <- "South-eastern Asia"
+zr  <- cq[iso3 == "ZAF" & group == "all"][which.max(d / py), year]                                   # South Africa's highest death rate
+zc  <- sort(sapply(c("diabetes", "crd", "cvd", "cancer"), function(g) rpc("ZAF", 1996, zr, g)), decreasing = TRUE)
+cs3 <- ccy(c("KGZ", "UZB", "RUS"), 1985:1995); uzf <- wt[iso3 == "UZB" & flag %in% TRUE]
+pk0 <- setnames(rbindlist(lapply(list(
+  c(ssa, "1996", sprintf("Jump: males %s, females %s points", dpp(ssa, 1996, 1), dpp(ssa, 1996, 2)), "Data artefact",
+    sprintf("South Africa (%s): deaths at 30-69 %s, person-years %s; %s (flagged)", shq("ZAF", 1996), pcq("ZAF", 1995, 1996), pcq("ZAF", 1995, 1996, v = "py"), jt("ZAF", 1996, "cvd")),
+    "Kept; List change flagged; registration completeness is a caveat (Section 7)"),
+  c(ssa, "1997-2015", sprintf("Rise to the peak (males %s, females %s), then fall", ppk(ssa, 1), ppk(ssa, 2)), "Not explained",
+    sprintf(paste("South Africa's NCD4 death rate at 30-69: %s per 100,000 in 1996, %s in %d (%+.0f%%; by cause %s) and %s in 2015. Its all-cause rate: %s, %s and %s (same years); %s%% of the rise to %d is in 'other causes',",
+                  "which include HIV and tuberculosis, consistent with the HIV/AIDS epidemic; ill-defined causes %s and %s per 100,000 in 1996 and %d. Why NCD4 rose was not established: HIV and tuberculosis deaths certified to NCD4 causes",
+                  "and improving registration are possible, neither checked. List %s throughout, %s"),
+            rq("ZAF", 1996, "ncd4"), rq("ZAF", zr, "ncd4"), zr, rpc("ZAF", 1996, zr, "ncd4"), andl(sprintf("%s %+.0f%%", cn[names(zc)], zc)), rq("ZAF", 2015, "ncd4"),
+            rq("ZAF", 1996), rq("ZAF", zr), rq("ZAF", 2015), fx(100 * diff(vq("ZAF", c(1996, zr), "other")) / diff(vq("ZAF", c(1996, zr))), 0), zr,
+            rq("ZAF", 1996, "ill_defined"), rq("ZAF", zr, "ill_defined"), zr, ccy("ZAF", 1996:2015)[, andl(unique(list))], nfl(ccy("ZAF", 1996:2015)[, sum(interpolated)])),
+    "Kept; misclassification and registration completeness are caveats (Section 7)"),
+  c(ssa, "2010", sprintf("Fall: males %s, females %s points", dpp(ssa, 2010, 1), dpp(ssa, 2010, 2)), "Mixed",
+    sprintf("South Africa's WHO population at 30-69 %s in one year, its deaths %s", pcq("ZAF", 2009, 2010, v = "py"), pcq("ZAF", 2009, 2010)), "Kept; steps inside the WHO population are not checked by the build"),
+  c(ssa, "2016-2019", sprintf("Fall in 2019: males %s, females %s points", dpp(ssa, 2019, 1), dpp(ssa, 2019, 2)), "Mixed",
+    sprintf("South Africa's population is interpolated in %s and grows %s a year at 30-69 in 2016-2019 (%s in 2012-2015); its ill-defined share rises from %s%% (2018) to %s%% (2019)",
+            csi[iso3 == "ZAF" & py_source %like% "interpolated", runs_txt(year)], gro("ZAF", 2016:2019), gro("ZAF", 2012:2015),
+            p1(vq("ZAF", 2018, "ill_defined") / vq("ZAF", 2018)), p1(vq("ZAF", 2019, "ill_defined") / vq("ZAF", 2019))),
+    "Kept; population source recorded (WHO interpolated, Table 1.1), its growth not checked"),
+  c(paste(cas, "and", eeu), "1986-1994", sprintf("Dip in 1986 (males: %s %s, %s %s points), then rise to the peak (males: %s %s, %s %s)", cas, dpp(cas, 1986, 1), eeu, dpp(eeu, 1986, 1), cas, ppk(cas, 1), eeu, ppk(eeu, 1)), "Real event",
+    sprintf("Russia (%s%% of Eastern Europe's person-years at 30-69 in 1993), Kyrgyzstan and Uzbekistan in 1985-1995: List %s, %s, population %s; Russia's NCD4 deaths at 30-69 %s in 1993. Consistent with the Soviet anti-alcohol campaign and the post-Soviet mortality crisis",
+            shp("RUS", 1993), andl(unique(cs3$list)), nfl(cs3[, sum(interpolated)]), andl(unique(cs3$py_source)), pcq("RUS", 1992, 1993, "ncd4")), "Kept"),
+  c(cas, "1997-2005", sprintf("Up and down from year to year (males %s to %s points)", sprintf("%+.2f", pd[area == cas & sex == 1 & year %in% 1997:2005, min(d)]), sprintf("%+.2f", pd[area == cas & sex == 1 & year %in% 1997:2005, max(d)])), "Not explained",
+    sprintf("Uzbekistan's deaths at 30-69 (thousands, 1996-2005: %s) alternate while its person-years grow %s a year; %s (flagged)", paste(f1(vq("UZB", 1996:2005) / 1e3), collapse = ", "), gro("UZB", 1997:2005),
+            jt("UZB", 2004, uzf[year_new == 2004, group])), "Kept as reported"),
+  c(cas, "2020-2022", sprintf("Rise in 2020 (males %s, females %s points), falls in 2021-2022", dpp(cas, 2020, 1), dpp(cas, 2020, 2)), "Mixed",
+    sprintf("Uzbekistan (%s) reports %s COVID-19 deaths at 30-69 in 2020-2022 (Kyrgyzstan %s); its cardiovascular deaths %s and all deaths %s in 2020; %s (flagged). COVID-19 deaths were probably certified to other causes, including cardiovascular diseases, so part of the pandemic enters NCD4 here (not verified)",
+            shq("UZB", 2020), fn(sum(vq("UZB", 2020:2022, "covid"))), fn(sum(vq("KGZ", 2020:2022, "covid"))), pcq("UZB", 2019, 2020, "cvd"), pcq("UZB", 2019, 2020), jt("UZB", 2020, uzf[year_new == 2020, group])),
+    "Kept; List change flagged; COVID-19 certification is not checked by any rule, a caveat"),
+  c(sea, "2001", sprintf("Rise: males %s points", dpp(sea, 2001, 1)), "Not explained",
+    sprintf("The Philippines (%s): NCD4 deaths among males at 30-69 %s; Singapore %s; %s; %s", shq("PHL", 2001), pcs("PHL", 2000, 2001, 1), pcs("SGP", 2000, 2001, 1), fly("PHL", 2000:2001), fgs(sea, 2001)), "Kept"),
+  c(sea, "2004-2005", sprintf("Rise in 2004 (females %s, males %s points), fall in 2005 (males %s)", dpp(sea, 2004, 2), dpp(sea, 2004, 1), dpp(sea, 2005, 1)), "Data artefact",
+    sprintf("The Philippines (%s) have no WHO deaths for %s: deaths are a straight line from 2003 to 2006, but person-years come from the WHO population in %s (UN WPP calibrated in 2003 and 2006), which rises %s from 2004 to 2005",
+            shq("PHL", 2004), ccy("PHL", 2003:2006)[interpolated == TRUE, runs_txt(year)], csi[iso3 == "PHL" & year %in% 2003:2006 & py_source == "WHO", runs_txt(year)], pcq("PHL", 2004, 2005, v = "py")),
+    "Flagged (filled years, population source); not corrected"),
+  c(sas, "1999", sprintf("Rise: males %s points", dpp(sas, 1999, 1)), "Not explained",
+    sprintf("Sri Lanka, the only country: NCD4 deaths among males at 30-69 %s, all deaths %s; %s; %s", pcs("LKA", 1998, 1999, 1), pcs("LKA", 1998, 1999, 1, "all"), fly("LKA", 1998:1999), fgs(sas, 1999)), "Kept"),
+  c(sas, "2005", sprintf("Not in F1 (NCD4); all-cause death rate at 30-69 %s in 2005, %s in 2006", arq(sas, 2004, 2005), arq(sas, 2005, 2006)), "Real event",
+    sprintf("Sri Lanka's external deaths at 30-69: %s (2004), %s (2005), %s (2006). Consistent with the Indian Ocean tsunami (year of registration not checked)", fn(vq("LKA", 2004, "external")),
+            fn(vq("LKA", 2005, "external")), fn(vq("LKA", 2006, "external"))), "Kept"),
+  c(sas, "2006", sprintf("Rise: males %s, females %s points", dpp(sas, 2006, 1), dpp(sas, 2006, 2)), "Data artefact",
+    sprintf("Sri Lanka, the only country, changes %s (flagged)", jt("LKA", 2006, c("ncd4", "diabetes"))), "Flagged, not corrected"),
+  c(was, "1988", sprintf("Not in F1 (NCD4); all-cause death rate at 30-69 %s in 1988, %s in 1989", arq(was, 1987, 1988), arq(was, 1988, 1989)), "Real event",
+    sprintf("Armenia's external deaths at 30-69: %s (1987), %s (1988), %s (1989). Consistent with the Spitak earthquake", fn(vq("ARM", 1987, "external")), fn(vq("ARM", 1988, "external")), fn(vq("ARM", 1989, "external"))), "Kept"),
+  c(was, "1993", sprintf("Rise: males %s points", dpp(was, 1993, 1)), "Real event",
+    sprintf("NCD4 deaths among males at 30-69: Armenia %s, Azerbaijan %s, Georgia %s; %s. Consistent with the post-Soviet mortality crisis, as in Central Asia and Eastern Europe",
+            pcs("ARM", 1992, 1993, 1), pcs("AZE", 1992, 1993, 1), pcs("GEO", 1992, 1993, 1), fgs(was, 1993)),
+    "Kept; Georgia's filled year flagged"),
+  c(was, "1995-1996", sprintf("Fall: females %s, males %s points in 1995, males %s in 1996", dpp(was, 1995, 2), dpp(was, 1995, 1), dpp(was, 1996, 1)), "Not explained",
+    sprintf("Georgia's deaths at 30-69 %s in 1995 (person-years %s), after a filled %s and a territory change (%s)", pcq("GEO", 1994, 1995), pcq("GEO", 1994, 1995, v = "py"),
+            ccy("GEO", 1990:1994)[interpolated == TRUE, runs_txt(year)], ad[iso3 == "GEO", sub("^E(.*) \\(mort_notes\\).*", "e\\1", note)]), "Kept; filled year and territory change flagged"),
+  c(eeu, "1983-1984", "Not in F1 (NCD4)", "Data artefact",
+    sprintf("Russia's external deaths at 30-69 fall by %s in 1983 while its ill-defined deaths rise by %s; both return in 1985 (ill-defined %s in 1982, %s in 1985)", fn(-diff(vq("RUS", 1982:1983, "external"))),
+            fn(diff(vq("RUS", 1982:1983, "ill_defined"))), fn(vq("RUS", 1982, "ill_defined")), fn(vq("RUS", 1985, "ill_defined"))), "Not flagged by any check; NCD4 not affected"),
+  c(eeu, "1995-2006", sprintf("Fall to 1998, rise to 2003, fall from 2006 (males %s points in 2006)", dpp(eeu, 2006, 1)), "Real event",
+    sprintf("Russia: NCD4 deaths at 30-69 %s from 1998 to 2003 and %s in 2006; %s. Consistent with the rise of Russian mortality after the 1998 economic crisis and its fall from the mid-2000s", pcq("RUS", 1998, 2003, "ncd4"), pcq("RUS", 2005, 2006, "ncd4"),
+            wt[iso3 == "RUS" & year_new == 1999, sprintf("List %s to %s in 1999, flagged in %d of %d cause groups", list_old[1], list_new[1], sum(flag, na.rm = TRUE), .N)]), "Kept"),
+  c("Southern Europe", "1969-1970", sprintf("One-year rise in 1969 (males %s points), fall in 1970 (males %s)", dpp("Southern Europe", 1969, 1), dpp("Southern Europe", 1970, 1)), "Not explained",
+    sprintf("Deaths at 30-69 %s in Spain and %s in Italy in 1969, %s and %s in 1970; List %s, %s; 1969: %s; 1970: %s. An epidemic year is possible (cause not established)", pcq("ESP", 1968, 1969), pcq("ITA", 1968, 1969),
+            pcq("ESP", 1969, 1970), pcq("ITA", 1969, 1970), andl(unique(ccy(c("ESP", "ITA"), 1968:1970)$list)), nfl(ccy(c("ESP", "ITA"), 1968:1970)[, sum(interpolated)]), fgs("Southern Europe", 1969), fgs("Southern Europe", 1970)), "Kept"),
+  c("Several areas", "2020-2022", sprintf("Rise in 2020 (males: %s %s, Northern America %s points), falls in 2022", lac, dpp(lac, 2020, 1), dpp("Northern America", 2020, 1)), "Real event",
+    sprintf("COVID-19 is %s%% of deaths at 30-69 in %s and %s%% in Northern America in 2021; it counts in all causes, not in NCD4; NCD4 deaths rose too (Mexico's NCD4 deaths at 30-69 %s in 2020)",
+            cvs(lac, 2021), lac, cvs("Northern America", 2021), pcq("MEX", 2019, 2020, "ncd4")), "Kept; COVID-19 is its own cause group")),
+  as.list)), c("Area", "Years", "F1", "Verdict", "Evidence", "Handling"))
+pv  <- pk0[, .(Area, Years, F1)][, r := .I][!F1 %like% "^Not in F1"][
+  , .(area = if (Area == "Several areas") ai$area else ai$area[vapply(ai$area, grepl, NA, x = Area, fixed = TRUE)], y0 = y0(Years), y1 = y1(Years)), by = r]
+pkc <- pv[pk, on = .(area, y0 <= year, y1 >= year), .(area, year = i.year, sex = i.sex, d = i.d, r = x.r)][, .(r = if (all(is.na(r))) NA_integer_ else min(r, na.rm = TRUE)), by = .(area, year, sex, d)]
+pkf <- pkc[is.na(r)][order(match(area, ai$area), year, -sex)]                                    # isolated changes: falls only
+stopifnot(nrow(pkc) == nrow(pk), nrow(pkf) > 0, all(pkf$d < 0))
+pp  <- pe[, .(area, sex, year, p = 100 * p_period)]
+pkf[, `:=`(p0 = mapply(function(a, s, y) pp[area == a & sex == s & year == y - 1L, p], area, sex, year),
+           pa = mapply(function(a, s, y) pp[area == a & sex == s & year %in% (y + 1:2), if (.N) max(p) else NA_real_], area, sex, year),
+           rdn = mapply(function(a, y, s) cqs[area == a & sex == s & group == "ncd4" & year %in% (y - 1):y][order(year), .(dd = diff(d), r = (d[2] / py[2]) / (d[1] / py[1])), by = iso3][
+             which.max(abs(dd)), r < 1], area, year, sex),
+           fg = mapply(fgs, area, year))][, stay := pa < p0]
+pkn <- pkf[, .(s = if (.N == 2) " (both sexes)" else if (sex == 2) " (females)" else ""), by = .(area, year)][, .(t = sprintf("%s %s", area[1], paste0(year, s, collapse = ", "))), by = area]
+pkt <- rbind(pk0, data.table(Area = sprintf("Isolated falls (%d areas)", uniqueN(pkf$area)), Years = rng(pkf$year),
+  F1 = sprintf("%d falls of %s to %s points (%d males, %d females)", nrow(pkf), f2(min(-pkf$d)), f2(max(-pkf$d)), pkf[sex == 1, .N], pkf[sex == 2, .N]), Verdict = "Not traced",
+  Evidence = sprintf("Males unless marked: %s. In %d of the %d, F1 stays below its level before the fall in the next two years (a step in a decline, not a one-year dip)%s. %s, the NCD4 death rate at 30-69 falls in the country with the largest change in NCD4 deaths. %d coincide with a change of List, a filled year or a change of population source in one of the area's countries (%s)",
+                     paste(pkn$t, collapse = "; "), pkf[stay %in% TRUE, .N], nrow(pkf), if (pkf[!stay %in% TRUE, .N]) sprintf("; not in %s", pkf[!stay %in% TRUE, andl(sprintf("%s %d%s", area, year, fifelse(sex == 2, " (females)", "")))]) else "",
+                     if (all(pkf$rdn)) "In each" else sprintf("In %d of them", pkf[rdn %in% TRUE, .N]), pkf[!fg %like% "^no flag", .N], pkf[!fg %like% "^no flag", .(t = paste(area[1], andl(unique(year)))), by = area][, paste(t, collapse = "; ")]),
+  Handling = "Kept; checked against the flags, not traced one by one"))
+pvs <- function(v) pkt[Verdict == v & !Area %like% "^Isolated", paste(paste(Area, Years), collapse = "; ")]
+## text of Section 1.1: excluded codes, filled years and gaps, ill-defined limit, person-years by source in the windows
+xa  <- ad[include == FALSE & mort_years > 0, .N, by = .(r = xrs(reason))][order(-N)]
+irn <- cy[interpolated == TRUE & composite == FALSE][order(who_code, year)][, .(n = .N), by = .(who_code, r = cumsum(c(1L, diff(year) != 1L)))]
+ugp <- cy[, .(y = setdiff(min(year):max(year), year)), by = who_code][, .(n = .N), by = .(who_code, r = cumsum(c(1L, diff(y) != 1L)))]   # gaps not filled
+anx <- unique(asa[group == "all", .(area, year, n_countries, n_interpolated)])
+ilx <- cy[reason %like% "^ill"]; ile <- merge(acn, ilx[, .(iso3, country, y = year, s = ill_share_3069)], by = "iso3")[y == y0 - 1L]
+wps <- cyy[, .(py = sum(py_3069)), by = .(s = ps(py_source))][, p := py / sum(py)][order(-p)]
+gl8 <- c(cn4, external = "external causes", ill_defined = "ill-defined causes", covid = "COVID-19")
+iy2 <- ina[, .(t = sprintf("%s %s, ages %d-%d", area, runs_txt(year), 5L * (min(age) - 1L), 5L * max(age) - 1L)), by = area]
+cvd0 <- cvp[, .(d = sum(d), s = max(cva[area %in% cvp$area & year %in% cvp$year, s]))]       # COVID-19 deaths carried into filled years before 2020
+pkr <- lnr("code/08_who_processing.Rmd", "## F1 period indicator", "pvs <- function")         # lines of the changes of F1 (Table 1.7), above
+pkl <- sprintf("The listing and grouping of these changes are computed in the setup chunk of %s (%s).", lk("code/08_who_processing.Rmd"),
+               lnl("code/08_who_processing.Rmd", pkr[1], pkr[2], sprintf("lines %d-%d", pkr[1], pkr[2])))
+```
+
+## 1.1 How the WHO Mortality Database was processed
+
+This section explains, step by step, what was done to the WHO data before any analysis, what was deliberately left as reported, and why. Each part starts with a short summary in plain words, followed by the exact rule and, where relevant, what was not done, and ends with links to the R code that does the step and to the files that hold the details. `r lkt`
+
+**Terms used here.**
+
+- *ICD*: International Classification of Diseases, revisions 7 to 10.
+- *List*: a WHO cause list, the set of codes a country used in a year, for example 104 = ICD-10 at four characters (Table 1.5).
+- *NCD4*: cancer, cardiovascular diseases, diabetes and chronic respiratory diseases, the four groups of SDG target 3.4.
+- *F1*: the period SDG 3.4 indicator, the probability of dying from NCD4 between 30 and 70 at the death rates of one calendar year (Figure F1, Section 2).
+- *Usable year*: a country-year that passes the usability rule: every needed cause group can be separated at every age 30-69, the population is known, WHO's chapter totals add up to its all-cause total, and ill-defined causes are at most `r sub(".*> ", "", ill_lab)` of deaths at 30-69.
+- *Window*: the years over which an area is followed, with the same countries in every year.
+- *Composite*: a series built by adding up its parts (`r ad[!is.na(composite), andl(sprintf("%s %s", name, composite_years))]`).
+- *WPP calibrated*: UN World Population Prospects population, scaled to the WHO population by sex and age.
+- *Study sub-project* (`Study/`): the repetition of Bray et al. 2021 (premature NCD deaths, 2000-2019) for the same areas; its sensitivity analysis *F8* redistributes ill-defined deaths.
+- *Eu40_APC*: the sister project on European generations, whose raw WHO files and methods are reused here.`r if (gh()) " It is a separate project: its files, the raw WHO files among them, are not in this repository; the WHO files can be downloaded from the WHO Mortality Database." else ""`
+
+### In brief
+
+- **The raw data.** The WHO Mortality Database (`r sub(".*, ", "", src)`) gives the deaths registered in each country by year, sex, age group and cause, coded with ICD-7 to ICD-10 in `r uniqueN(lst$list)` WHO cause lists, together with WHO population figures. The raw files were only read, never edited: every step below is done in R and writes new files.
+- **What was changed.** Ages were put into the same 18 five-year groups, deaths of unknown age were shared out over the ages pro rata within each cause group, and gaps of 1-3 years were filled with a straight line. Two series were completed from their parts (`r ad[!is.na(composite), andl(sprintf("%s %s", name, composite_years))]`), and missing population was taken from the UN World Population Prospects (WPP), adjusted to the WHO level.
+- **What was not changed: ill-defined causes.** Deaths certified only with a symptom or an unknown cause (ICD-10 R00-R99 and the matching codes of earlier revisions) stay a group of their own and were **not** shared out among the other causes, pro rata or otherwise; years where they exceed `r sub(".*> ", "", ill_lab)` of deaths at 30-69 are not used. A pro-rata redistribution was tested only in a sensitivity analysis of the Study sub-project (F8), for the `r unique(sv$years)` change of the period NCD4 indicator (largest effect in `r ilw[which.max(abs(d)), area]`: `r f1(ilw[which.max(abs(d)), pc_main])`% as certified, `r f1(ilw[which.max(abs(d)), pc_ill_defined])`% redistributed); its effect on Results 1-3 was not computed (Table 1.6).
+- **Other things left as reported.** Deaths of unknown sex were dropped, age groups merged by a country (for example 75 and over) were left missing, and the WHO population was used as published. Changes of WHO cause list were flagged, not corrected.
+- **What was kept.** Only national data, one code per territory and no country rated Low by WHO; a year is used only if every needed cause group can be separated at 30-69, the population is known, WHO's chapter totals add up to its all-cause total and ill-defined causes are at most `r sub(".*> ", "", ill_lab)`. Each area sums a fixed set of countries over a fixed window, each country contributing its longest unbroken run of such years (Table 1.4).
+- **Gaps.** Only runs of 1-3 missing years were filled; longer gaps break a country's series. Filled years are `r cyy[interpolated == TRUE, .N]` of the `r fn(nrow(cyy))` country-years in the area windows (`r p1(csi[group == "all" & age %in% a3069, sum(py[interpolated]) / sum(py)])`% of the person-years at 30-69).
+- **Peaks.** No year was removed, smoothed or corrected because of a peak. All `r nrow(pk)` year-to-year changes of at least 1 percentage point in F1 (the period SDG 3.4 indicator: the probability of dying from NCD4 between 30 and 70 at one calendar year's death rates) are in Table 1.7 with a verdict: some are real events (crises, a disaster, COVID-19), some come from the data (a change of cause list, filled years, a step in the population), and some are not explained.
+- **Where to check.** Each part below ends with links to the R code, Table 1.8 maps every step to its code, and the decisions are numbered in `r if (gh()) lk("NOTES.md") else "NOTES.md (Section 8)"`.
+
+**From the WHO files to the area series.** Table 1.4 follows the country-years through the build. The build applies the usability rule to every code and eligibility afterwards; the counts below do not depend on the order. Table 1.2 counts the usable years of all codes, eligible or not (`r fn(cy[usable == TRUE, .N])`); here only eligible codes are counted, from 'Eligible codes' on.
+
+```{r t-flow}
+kt(flw[, .(Step = s, `What is kept` = k, `Countries (WHO codes)` = w, `Country-years` = fn(n), `Change at this step` = x)],
+   "Table 1.4. Data flow: WHO country codes and country-years at each step of the data build, from the national deaths in the WHO files to the area windows (data/dict/areas.csv, output/data_build/country_coverage.csv, output/data_build/areas_included.csv)")
+```
+
+### Raw files
+
+*In plain words.* Everything starts from the raw files of the WHO Mortality Database. They were downloaded once for the sister project Eu40_APC and are kept there in a read-only folder. There is one file of deaths per ICD revision (ICD-10 in several parts), two Excel workbooks for recent years of Germany and Norway, the population file, the list of country codes and WHO's notes. Only national rows are used: rows for a region, a city or a population group are skipped.
+
+*Exact rule.*
+
+- Source: `r who_src`. Deaths: `r length(who_files)` files (`r andl(basename(who_files))`) and the workbooks `r andl(paste0(names(who_xl), ".xlsx"))`; population `mort_pop`, codes `mort_country_codes` and notes `mort_notes`, all in `Eu40_APC/data/who_mortality/raw/`. The documentation PDF (`raw/mort_documentation/`) is cited by page in the cause dictionary. `mort_availability` is not read: the years come from the rows themselves (NOTES items 2 and 32).
+- National rows are those with `Admin1` and `SubDiv` blank. The national extract is cached and rebuilt whenever a raw file changes.
+- The `r ad[who_code %in% frm[frmat == "NS", who_code], name]` workbook (`r frm[frmat == "NS", runs_txt(year)]`) merges ages 0-14, which are left missing; ages 30-69 are complete, so these years are used. The `r ad[who_code == cy[iso3 == "DEU" & year > 2000 & reason == "group not isolable", who_code[1]], name]` workbook (`r cy[iso3 == "DEU" & year > 2000 & reason == "group not isolable", runs_txt(year)]`) suppresses small cells, so only all-cause deaths are taken from it and these years are not usable (NOTES items 16-17).
+
+`r cdl("raw")`
+
+### Countries and data quality
+
+*In plain words.* WHO uses its own country codes. Each code was given its ISO3 code and the UN M49 codes and names of its country, region and sub-region; the sub-region is the 'area' of this study. Some codes describe the same people twice: a country and its parts, or a former state and its successors. One code per territory is kept: the United Kingdom rather than its parts, unified Germany, and the successor states rather than the USSR, Czechoslovakia or Yugoslavia. Codes with regional data only are not used, and neither are countries rated Low in WHO's own assessment of data quality. Two series were completed by adding up their parts. Changes of territory inside a series were documented but not adjusted, because the WHO deaths and the WHO population of a year cover the same territory.
+
+*Exact rule.*
+
+- `r nrow(ad)` WHO codes. ISO3 comes from the name (countrycode package), set by hand for former entities and parts of countries; the regions of `r ad[region_source == "manual", .N]` codes not in M49 were set by hand (NOTES items 4-5).
+- `r ad[include == TRUE, .N]` codes are eligible and `r ad[include == FALSE, .N]` are not (reasons in `data/dict/areas.csv`; NOTES item 6). `r nrow(n0)` have no national rows: `r n0[is.na(subnational_mort) & !reason %like% "^Former", .N]` have no rows at all, `r length(n0r)` have regional rows only (`r andl(n0r)`) and `r n0[reason %like% "^Former", .N]` is a former entity without data (`r andl(n0[reason %like% "^Former", name])`). Of the codes with national rows, `r sum(xa$N)` are left out: `r xa[, andl(sprintf("%d %s", N, r))]` (Table 1.4). Regional rows, which `r ad[!is.na(subnational_mort), .N]` codes have, are never used.
+- WHO data-quality rating (above): of the eligible codes, `r qe[q == "High", .N]` are rated High and `r qe[q == "Medium", .N]` Medium, `r qe[q %like% "^not in", .N]` are not in the WHO assessment and `r qe[q %like% "without", .N]` are in it without a rating (`r andl(sort(qe[q %like% "without", name]))`; NOTES item 85).
+- Composites: deaths and person-years of the parts are added by year, sex, age and cause group (`r ad[!is.na(composite), andl(sprintf("%s %s = %s", name, composite_years, gsub("+", " + ", composite, fixed = TRUE)))]`, WHO codes; NOTES item 7).
+- Territory changes in `r ad[!is.na(change_years), .N]` codes (`r ad[!is.na(change_years), andl(sprintf("%s %s", name, gsub(";", " and ", change_years)))]`) were not adjusted; their effect on the person-years inside the windows is in the Data caveats above (NOTES items 7 and 28).
+
+*Not done.* The WHO rating is one recent assessment applied to every year: completeness of registration in earlier decades was not assessed or corrected, and no data were weighted by quality (NOTES item 85, Section 7).
+
+`r cdl("countries")`
+
+### Ages
+
+*In plain words.* Countries report deaths in different age layouts. Some give every five-year group up to 95 and over; others merge the old ages (for example 75 and over) or give no ages at all. All layouts were turned into the same 18 five-year groups, from 0-4 to 85 and over. When a country merged ages across these groups, the merged cells were left missing rather than split by assumption. Deaths of unknown age were shared out over the ages in proportion to the deaths of known age of the same cause group, in the same country, year and sex: each group keeps its age pattern and its number of deaths. Deaths of unknown sex were dropped.
+
+*Exact rule.*
+
+- `age18()` adds the WHO age columns into 18 groups according to each row's age format (the WHO variable `Frmat`; WHO documentation, Annex 1, PDF p.8). Formats 03 and 04 (75 and over merged), 05 (70 and over) and 06 (65 and over) leave the merged groups missing; 07 and 08 (ten-year groups) and 09 (no ages) leave every age missing; the Norway workbook leaves ages 0-14 missing.
+- Observed country-years by age format (`r fn(nrow(frm))` in all):
+    - every age (formats 00-02): `r fn(fru[g == "a", .N])`;
+    - ages from 70 or 75 on merged (formats 03-05): `r fru[g == "b", .N]`, of which `r fru[g == "b", sum(usable)]` usable, since ages 30-69 are complete;
+    - ages below 70 merged, or no ages (formats 06-09): `r fru[g == "c", .N]`, of which `r fru[g == "c", sum(usable)]` usable;
+    - the Norway workbook (ages 0-14 merged): `r fru[g == "ns", .N]`, of which `r fru[g == "ns", sum(usable)]` usable.
+- In the area windows, old ages are merged in `r frw[frmat %in% c("03", "04", "05"), .N]` country-years (`r frw[frmat %in% c("03", "04", "05"), .(t = sprintf("%s %s", iso3[1], runs_txt(year))), by = iso3][, paste(t, collapse = "; ")]`) and ages 0-14 in `r frw[frmat == "NS", .N]` (`r frw[frmat == "NS", sprintf("%s %s", iso3[1], runs_txt(year))]`). The area cells concerned are then missing. Later analyses fill them over 1-3 years (`r paste(iy2$t, collapse = "; ")`) or drop such years at a window end (`r paste(eyr$t, collapse = "; ")`; Section 6, 'Projections').
+- Unknown age (WHO column 26, deaths of unknown age): at every age, the deaths of a group are multiplied by 1 + unknown/known, separately by country, year, sex and cause group; a group with deaths of unknown age only is left missing. All causes by age is then rebuilt as the sum of the six exclusive groups (below), so its age pattern follows the cause mix (NOTES item 16).
+- Unknown sex (WHO sex code 9): dropped, a very small number of deaths (NOTES item 16). The WHO population of unknown age is dropped as well (NOTES item 18).
+
+*Not done.* Merged age groups were not split or modelled in the data build. The numbers of deaths of unknown age are not saved in any output file, so their size is not reported here (those of unknown sex are in NOTES item 16).
+
+`r cdl("ages")`
+
+### Causes across ICD revisions
+
+*In plain words.* Between `r min(cy$year)` and `r max(cy$year)` countries coded deaths with the 7th to 10th ICD revisions and, within each, with condensed or detailed WHO cause lists (Table 1.5). One dictionary, `data/dict/who_cause_groups.csv`, says which codes of each list make up each cause group, with the page of the WHO documentation for every row. Six groups never overlap and add up to all causes: cancer, cardiovascular diseases, external causes, ill-defined causes, COVID-19 and 'other' (everything else). NCD4, the group of SDG 3.4, is cancer + cardiovascular diseases + diabetes + chronic respiratory diseases. When a list has no code for a group (for example ischaemic heart disease in ICD-7), the group is left missing, not estimated, and the year cannot be used for Results 1-2: no ICD-7 year is usable, so none is in the area windows.
+
+*Exact rule.*
+
+- The dictionary has `r nrow(cgd)` rows for `r uniqueN(cgd$list)` Lists, each citing a page of the WHO documentation. Codes are matched exactly or on their first three characters, some rows subtract sub-items, and `r cgd[required == TRUE, .N]` rows are required sub-items: codes that must be reported in the country-year, or the group is missing (NOTES items 8-14).
+- `r sum(emp$k)` rows are comparability choices, each tested on the data (`source` column of the dictionary): `r emp[, andl(sprintf("%s added to %s (ICD-7 List%s %s)", w, glb[group], fifelse(k > 1, "s", ""), l))]`, so that these groups do not step at the move from ICD-7 to ICD-8. They decide which codes count in a group; no death counts were adjusted. As no ICD-7 year is usable, they do not affect the results.
+- ICD-10 codes (List 104): `r cgd[list == "104" & sign == 1 & group %in% c("cancer", "cvd", "ihd", "stroke", "diabetes", "crd", "lung", "copd", "external", "ill_defined", "covid"), andl(sprintf("%s %s", gl8[group], gsub(";", ", ", codes)))]`; the codes of earlier revisions are in the dictionary.
+- 'Other' is all causes minus cancer, cardiovascular, external, ill-defined and COVID-19, and all causes by age is rebuilt as the sum of the six groups (Ages above), so the six add up to all causes by construction (`r fn(chk[sex > 0 & !is.na(sum_diff), sum(sum_diff < 1e-6)])` of `r fn(chk[sex > 0 & !is.na(sum_diff), .N])` country-year-sex cells, a check of the code). Two other checks can fail. First, the top-level codes of each List (its chapters) must add up to its all-cause code: this fails in `r chk[sex > 0 & chapters_equal == FALSE, .N]` country-year-sex cells, in `r chf[, paste(sprintf("%s (%s)", country, gsub(", ", " and ", y)), collapse = "; ")]`, where some codes are missing or suppressed in the WHO files. Second, 'other' must not be negative at any age in the raw counts, which would mean that the five other groups count some deaths twice: `r if (ong == 0) "it never is" else sprintf("it is in %d cells", ong)`. A country-year failing either check is not usable ('codes do not add up' in Tables 1.2 and 1.4). This is the first failing criterion in `r fn(sum(cna$n))` country-years: `r cna[, paste(sprintf("%s (%s)", country, y), collapse = "; ")]` (the other cells fail an earlier criterion). The `r cna[include == TRUE, sum(n)]` country-years of eligible codes are `r cna[include == TRUE, andl(sprintf("%s %s", country, y))]`, a composite with the GDR as one of its parts; this is why Western Europe starts in `r y0(ai[area == "Western Europe", window])` (NOTES items 17 and 23).
+- No two of the six groups, and no two NCD4 parts, share a code in any List (`output/data_build/group_overlap.csv`). The all-cause code of every List is the documented one in every cell (NOTES item 8).
+- Groups a List cannot separate are missing (Table 1.5). A group is also missing in a year when a required sub-item is not reported. A country-year with any needed group missing at 30-69 is not usable ('group not isolable': `r fn(cy[reason == "group not isolable", .N])` country-years of all codes); `r cy[list %like% "^07", sum(usable)]` of the `r fn(cy[list %like% "^07", .N])` ICD-7 country-years are usable.
+- COVID-19: Lists without a COVID-19 code end before 2020 and get 0; the Lists used from 2020 on (`r andl(sort(unique(cy[year >= 2020, list])))`) all have one.
+- COPD (Result 3 only) is not required for a usable year but flagged (`copd_ok`): it can be separated in `r fn(cy[usable == TRUE, sum(copd_ok)])` of `r fn(cy[usable == TRUE, .N])` usable country-years, and is missing in `r cyy[copd_ok == FALSE, .N]` country-years of the area windows, all in `r andl(unique(cyy[copd_ok == FALSE, area]))` (NOTES items 11-13 and 26).
+- Sub-groups are capped at their parent group (lung cancer at cancer, COPD at chronic respiratory diseases and NCD4 at all causes; IHD and stroke are scaled down together where their sum exceeds cardiovascular diseases), because unknown age is shared out within each group separately (NOTES item 27).
+
+`r cdl("causes")`
+
+```{r t-lists}
+kt(lst[, .(List = list, `Cause list` = lsd[list], Years = y, `Countries (WHO codes)` = k, All = fn(n), `Eligible codes` = fn(e), Usable = fn(u), `No code for` = na)],
+   "Table 1.5. WHO cause lists in the national rows: years, WHO country codes and observed country-years (all, of eligible codes, and usable), and the needed groups with no code in the list, which are therefore missing (data/dict/who_cause_groups.csv; WHO documentation, PDF p.9-10). A group can also be missing in a year when a required sub-item is not reported (e.g. COPD in most 09A years)",
+   head = c(" " = 4, "Country-years" = 3, " " = 1))
+```
+
+### Coding changes
+
+*In plain words.* When a country moves to another ICD revision or WHO list, a cause's share of deaths can jump only because codes are grouped differently. For every such change, the last year of the old list was compared with the first year of the new one, and a relative change of more than `r num1(dsc("data_build", "window_transitions.csv", "flag"))`% in a group's share of deaths at 30-69 was flagged (for example, a share of 20% becoming more than `r fx(20 * (1 + num1(dsc("data_build", "window_transitions.csv", "flag")) / 100), 0)`% or less than `r fx(20 * (1 - num1(dsc("data_build", "window_transitions.csv", "flag")) / 100), 0)`%). The flags are warnings: no data were corrected, no year was excluded and the windows were not chosen to avoid them.
+
+*Exact rule.*
+
+- `r nrow(tr)` changes in `r uniqueN(tr$who_code)` codes, `r ltr[group == "all" & !is.na(jump_share), .N]` of them assessable at 30-69 (observed years only). Flagged, of the assessable changes: `r ltr[group %in% names(cn4) & !is.na(jump_share), .(f = sum(flag), n = .N, m = median(abs(jump_share))), by = group][order(match(group, names(cn4))), paste(sprintf("%s: %d of %d flagged, median change %s%%", cn4[group], f, n, f1(100 * m)), collapse = "; ")]` (`output/data_build/list_transitions.csv`; NOTES item 15). `r tr[year_new - year_old > 1, .N]` comparisons span more than one year, so they also contain the trend between the two years.
+- Inside the area windows there are `r nrow(unique(wt[, .(iso3, year_old)]))` changes, at least one in each of the `r uniqueN(wt$iso3)` countries; `r nrow(unique(wt[, .(iso3, year_old)])) - wt[, any(flag %in% TRUE), by = .(iso3, year_old)][, sum(V1)]` of these `r nrow(unique(wt[, .(iso3, year_old)]))` changes have no flag in any of the nine groups of Results 1-3. NCD4 is flagged at `r wt[group == "ncd4", sum(flag, na.rm = TRUE)]` of them: `r wt[group == "ncd4" & flag %in% TRUE, andl(sprintf("%s %s to %s, %d-%d, %+.0f%%", country, list_old, list_new, year_old, year_new, 100 * jump_share))]` (`output/data_build/window_transitions.csv`; NOTES item 31; Section 7, 'List changes').
+- Two known steps were handled by the choice of codes in the dictionary instead (Causes above): ICD-7 cardiovascular diseases include cerebrovascular disease, and the former-Soviet COPD definition was checked at its List changes and kept as an approximation (NOTES item 12).
+
+*Not done.* No bridge coding or comparability ratios were applied, flagged years were not excluded, and there is no run without them. The Study sub-project gives, for its country sets, the implied effect of each flagged change on an area's deaths from each cause (`lt_effect` in `r lk("Study/output/replication/probability.csv")`): at least `r fx(100 * ltm, 0)`% for `r nrow(ltp)` area-cause pairs, in `r andl(ai$area[ai$area %in% ltp$area])` (Study NOTES item 7).
+
+`r cdl("coding")`
+
+### Ill-defined causes
+
+*In plain words.* Some deaths are certified only with a symptom or as 'cause unknown': ICD-10 chapter R and the matching chapter of earlier revisions. These ill-defined deaths are a cause group of their own. They count in all causes, and so in the competing mortality (deaths from other causes) of Result 1, but never in cancer, cardiovascular diseases or NCD4. They were **not** redistributed, pro rata or by any other rule, in the data or in Results 1-3.
+
+*Why not.* The analyses use deaths as certified, the method copied from Eu40_APC. Sharing them out pro rata would assume that ill-defined deaths have the same mix of causes as the certified deaths of the same area, sex, year and age, which the WHO files cannot confirm. Two steps deal with them instead: a year is not used when more than `r sub(".*> ", "", ill_lab)` of its deaths at 30-69 are ill-defined, and a sensitivity analysis measures what a redistribution would change (Table 1.6). Where the share is high, NCD4 rates are probably too low, since some ill-defined deaths are likely NCD4 deaths. Where the share changes, NCD4 trends are biased: a falling share (it fell most in `r ilt[order(s1 - s0)][1:2, andl(area)]`) understates NCD4 declines, a rising share (it rose most in `r ilt[order(s0 - s1)][1:2, andl(area)]`) overstates them.
+
+*Does it matter?* For trends, little in most areas: in the Study's sensitivity analysis F8 (`r unique(sv$years)`, both sexes), redistribution moves the % change of the NCD4 probability by a median of `r f1(median(abs(ilw$d)))` percentage points over the `r nrow(ilw)` areas, and by more than 5 points only in `r ilw[abs(d) > 5, andl(sprintf("%s (%s%% becomes %s%%)", area, f1(pc_main), f1(pc_ill_defined)))]`. For levels, the NCD4 probability in `r y0(unique(sv$years))` would be `r p1(min(ilw$lev))`% (`r ilw[which.min(lev), area]`) to `r p1(max(ilw$lev))`% (`r ilw[which.max(lev), area]`) higher, and more than 5% higher in `r ilw[lev > 0.05][order(-lev), andl(sprintf("%s (%s%%)", area, p1(lev)))]` (last column of Table 1.6). Results 1-3 were not re-run with redistributed deaths.
+
+*Exact rule.*
+
+- Definition (`ill_defined` rows of the dictionary): `r cgd[group == "ill_defined" & list %in% c("07B", "08B", "09B", "104"), andl(fifelse(note == "", sprintf("ICD-10 %s", codes), sub(" \\(.*", "", note)))]`. Other vague codes, such as heart failure or cancer of unspecified site, stay in their own groups.
+- Share of deaths at 30-69 over the windows: `r p1(min(ai$ill_share_3069))`% (`r ai[which.min(ill_share_3069), area]`) to `r p1(max(ai$ill_share_3069))`% (`r ai[which.max(ill_share_3069), area]`); first and last year of each window in Table 1.6.
+- Limit `ill_max` = `r sub(".*> ", "", ill_lab)` of deaths at 30-69, both sexes: `r fn(nrow(ilx))` country-years are not usable for this reason (`r fn(ilx[include == TRUE, .N])` of eligible codes; most in `r ilx[, .N, by = country][order(-N)][1:4, andl(sprintf("%s %d", country, N))]`). In `r nrow(ile)` area countries the year just before the window fails the limit (`r ile[, andl(sprintf("%s %d, %s%%", country, y, p1(s)))]`); their usable runs, and so the windows of `r andl(ile$area)`, start the year after.
+- In the area windows, ill-defined causes are above 5% of deaths at 30-69 in `r cyy[ill_share_3069 > 0.05, .N]` of `r fn(nrow(cyy))` country-years, above 10% in `r cyy[ill_share_3069 > 0.10, .N]` and above 15% in `r cyy[ill_share_3069 > 0.15, .N]` (highest `r cyy[which.max(ill_share_3069), sprintf("%s %d, %s%%", country, year, p1(ill_share_3069))]`).
+- Study sensitivity analysis F8: in each area, sex, year and age group at 30-69, each NCD4 cause is multiplied by (all - external - COVID-19) / (all - external - COVID-19 - ill-defined), which shares the ill-defined deaths out pro rata among all causes except external causes and COVID-19; years `r unique(sv$years)`, both sexes, the Study's country sets (as here except `r ilw[st != countries, andl(sprintf("%s: %s", area, st))]`; Table 1.6; Study NOTES item 1).
+- Module B (premature-death shares, Section 5.1) also writes a 'redistributed' variant to its CSV files: ill-defined deaths shared out in proportion to the other five groups. This raises every other share of a 5-year birth-cohort group by the same factor, 1 / (1 - ill-defined share): at 40-59 by a median of `r p1(1 / (1 - median(shr9)) - 1)`% and at most `r p1(1 / (1 - max(shr9)) - 1)`% (cohort groups observed at every age of the window). As the factor is the same for every cause, it cannot change the leading cause; the report shows the observed shares (and the variant without 2020-2022), not the redistributed ones.
+
+*Not done.* The effect of a redistribution on Results 1-3 (cohort probabilities, crossing cohorts, lags) was not computed. No run with another ill-defined limit was made (`04_area_series.R` accepts `ill_max=` for such runs). Vague codes outside chapter R were not reassigned (Study NOTES item 1).
+
+`r cdl("ill")`
+
+```{r t-ill}
+kt(ilw[, .(Area = area, Window = window, Whole = p1(ill_share_3069), First = p1(s0), Last = p1(s1), Highest = sprintf("%s (%d)", p1(sm), ym),
+           Cert = f1(pc_main), Red = f1(pc_ill_defined), Lev = p1(lev))],
+   sprintf("Table 1.6. Ill-defined causes by area: share of deaths at ages 30-69 (both sexes) over the window, in its first and last year and at its highest; Study sensitivity analysis F8: %% change in the NCD4 probability of dying between 30 and 70 (both sexes) over %s with deaths as certified (main analysis) and with ill-defined deaths redistributed pro rata, and how much higher the %d level is when redistributed. F8 uses the Study's country sets, which differ from the areas here for %s (data/derived/area_series.rds, output/data_build/areas_included.csv, Study/output/replication/sensitivity.csv)",
+           unique(sv$years), y0(unique(sv$years)), ilw[st != countries, andl(sprintf("%s (%s; window here %s)", area, st, window))]),
+   col.names = c("Area", "Window (years)", "Whole window (%)", "First year", "Last year", "Highest (year)", sprintf("%% change %s, as certified", unique(sv$years)), sprintf("%% change %s, redistributed", unique(sv$years)), sprintf("Level in %d, redistributed vs certified (+%%)", y0(unique(sv$years)))),
+   head = setNames(c(2, 4, 3), c(" ", "Ill-defined, % of deaths at 30-69", "Study F8 (Study country sets): NCD4 probability of dying 30-70")))
+```
+
+### Gaps and interpolation
+
+*In plain words.* Some countries skip one or a few years. Where 1-3 years in a row are missing inside a series, the deaths of every cause group, sex and age were filled with a straight line between the year before and the year after the gap; the WHO population was filled in the same way. Filled years count as usable and are marked (points in Figure D1). Longer gaps were not filled: they break a country's series, and only its longest unbroken run is used.
+
+*Exact rule.*
+
+- `interp()`: value = value before + (year - year before) / (year after - year before) x (value after - value before), on counts (deaths, person-years), not on rates; deaths and population are filled separately.
+- Deaths: `r fn(sum(irn$n))` country-years in `r uniqueN(irn$who_code)` codes, in runs of one year (`r irn[n == 1, .N]`), two (`r irn[n == 2, .N]`) and three (`r irn[n == 3, .N]`); with the composite `r cy[interpolated == TRUE & composite == TRUE, andl(sprintf("%s %d", country, year))]`, which has a filled part, `r cy[interpolated == TRUE, .N]` (Data caveats). WHO population: `r cy[py_source == "WHO (interpolated)", .N]` country-years at 30-69 (Table 1.1). Not filled: `r nrow(ugp)` gaps of `r min(ugp$n)` years or more (`r fn(sum(ugp$n))` missing country-years in `r uniqueN(ugp$who_code)` codes).
+- In the area windows: `r cyy[interpolated == TRUE, .N]` of `r fn(nrow(cyy))` country-years in `r uniqueN(cyy[interpolated == TRUE, iso3])` countries, `r p1(csi[group == "all" & age %in% a3069, sum(py[interpolated]) / sum(py)])`% of the person-years at 30-69. At least one country is filled in `r anx[n_interpolated > 0, .N]` of `r nrow(anx)` area-years, and every country of the area in `r anx[n_interpolated == n_countries, .(t = sprintf("%s %s", area[1], runs_txt(year))), by = area][, andl(t)]`.
+- A gap that spans a change of List spreads the coding step evenly over the filled years (List label 'old/new').
+- Known issue: the filling also applies to COVID-19. `r cvi[, andl(sprintf("%s %s is filled between %d and %d", country, y, lo, hi))]`, so `r fn(cvd0$d)` COVID-19 deaths appear in `r andl(unique(cvp$year))`, at most `r f3(100 * cvd0$s)`% of the deaths of `r andl(unique(cvp$area))` in a year (to be fixed at the next rebuild, NOTES item 92; Section 7). COVID-19 is not part of NCD4, so F1 and the NCD4 results are not affected; these deaths count only in all causes.
+
+*Not done.* Gaps longer than 3 years were not filled, and no model-based or rate-based filling was used.
+
+`r cdl("gaps")`
+
+### Peaks
+
+*In plain words.* A peak in a series can be real (an epidemic, a crisis, a disaster) or come from the data (a change of cause list, a filled year, a step in the population). The build never removes, smooths or corrects a year because of a peak. It prevents some artefacts by design: each area keeps the same countries over its whole window, so countries entering or leaving cannot create a jump, and country-years that fail the usability rule are left out. It flags or records the rest: changes of cause list, filled and composite years, the source of the population and changes of territory.
+
+For this section, every year-to-year change of at least 1 percentage point in F1 was listed: `r nrow(pk)` of the `r fn(pd[!is.na(d), .N])` changes (`r nrow(ai)` areas, 2 sexes, every year of the windows), in `r uniqueN(pk$area)` areas, most in `r pk[, .N, by = area][order(-N)][1:2, andl(area)]`. In `r dmc[s > 0.8, .N]` areas one country holds more than 80% of the person-years (From countries to areas, below), so a peak of the area is a peak of that country. Table 1.7 groups the changes into episodes and traces each to the countries and causes behind it and to the build's flags; the `r nrow(pkf)` isolated falls that belong to no episode are in its last row, checked against the flags but not traced one by one. The table also lists `r pkt[F1 %like% "^Not in F1", .N]` one-year changes that do not show in F1 but do in other causes. In short, by verdict:
+
+- **Real event** (no artefact found, consistent with a known event; not checked against outside sources): `r pvs("Real event")`.
+- **Data artefact** (the change comes from the data: a change of cause list, filled years, a step in the population, a shift between causes): `r pvs("Data artefact")`.
+- **Mixed** (partly an event, partly the data or the way deaths were certified): `r pvs("Mixed")`.
+- **Not explained** (no flag of the build explains it and no event was identified): `r pvs("Not explained")`.
+- **Not traced**: the `r nrow(pkf)` isolated falls of the last row.
+
+*Exact rule.*
+
+- Same countries throughout: the number of countries summed is the same in every year of the window in `r asa[, uniqueN(n_countries), by = area][, sum(V1 == 1)]` of the `r nrow(ai)` areas (`n_countries` in `data/derived/area_series.rds`).
+- Change in F1 = 100 x (p in a year - p in the year before), for the period indicator by area and sex (`output/sdg34/period.csv`). A change belongs to the first row of Table 1.7 whose area and years contain it ('Several areas': every area); every change of at least 1 point is in the table, the isolated falls in its last row. Country values are at ages 30-69 inside the windows (`data/derived/country_series.rds`); changes of List come from `output/data_build/window_transitions.csv`.
+- Flags checked for a change from one year to the next, in every country of the area: a change of List, a filled or composite year, a change of population source. An isolated fall counts as a step in a decline when F1 in the next two years stays below its level before the fall; the country with the largest change is the one with the largest absolute change in NCD4 deaths at 30-69 (same sex).
+- No smoothing and no removal of outliers anywhere in the build; the only average is the 3-year mean WHO/WPP ratio of the population calibration (below). The models of Result 2 and Section 5 use 5-year cells, which average single-year peaks.
+
+*Not done.* Steps inside WHO's own population series (South Africa 2010), a shift between external and ill-defined causes (Russia 1983-1984) and COVID-19 deaths certified to other causes (Uzbekistan 2020-2022) are not checked by any rule of the build; they are reported here, not corrected. The isolated falls were not traced one by one, and no verdict was checked against outside sources.
+
+`r cdl("peaks", pkl)`
+
+```{r t-peaks}
+kt(pkt, "Table 1.7. Changes of F1 (the period SDG 3.4 indicator: probability of dying from NCD4 between 30 and 70; change in percentage points of that probability, output/sdg34/period.csv): every year-to-year change of at least 1 point, grouped into episodes (last row: isolated falls), and other one-year changes, with the evidence from the countries at ages 30-69 inside the windows (data/derived/country_series.rds), the changes of WHO List (output/data_build/window_transitions.csv) and the verdict (defined in the text)",
+   col.names = c("Area", "Years", "What F1 shows", "Verdict", "Evidence", "Handling"))
+```
+
+### Population
+
+*In plain words.* Rates need the population at risk. The WHO population supplied with the deaths was used wherever it exists, because it covers the same territory as the deaths. Outside Europe it often stops early, so the missing years and ages of a country-year with deaths were taken from the UN WPP, multiplied by the WHO/WPP ratio of the nearest WHO years ('WPP calibrated'): this keeps the WHO level and territory. Countries without any WHO population take WPP as published.
+
+*Exact rule* (details in 'Population' above and Table 1.1; NOTES item 84).
+
+- WHO population: `r fn(sum(ad$pop_years))` national country-years in `r ad[pop_years > 0, .N]` codes, ages harmonised as the deaths, unknown age dropped, gaps of 1-3 years filled.
+- WPP calibrated: ratio = WHO/WPP for that sex and age, the mean over up to 3 WHO years on each side, held constant beyond the first or last WHO year and interpolated between the two sides inside a longer WHO gap.
+- In the area windows the person-years at 30-69 are `r wps[, andl(sprintf("%s%% %s", p1(p), s))]`; calibrated WPP enters `r cyy[py_source == "WPP calibrated", uniqueN(iso3)]` countries and uncalibrated WPP none.
+- The steps where a series switches between WHO and WPP (the seams) were measured (above), not smoothed.
+
+*Not done.* No run with uncalibrated WPP. Steps inside WHO's own population series are not checked (at 30-69, e.g. South Africa 2010 `r pcq("ZAF", 2009, 2010, v = "py")`, Armenia 2002 `r pcq("ARM", 2001, 2002, v = "py")`, Moldova 2018 `r pcq("MDA", 2017, 2018, v = "py")`). The WPP revision used is to be confirmed (NOTES item 84).
+
+`r cdl("pop")`
+
+### From countries to areas
+
+*In plain words.* An area is a UN M49 sub-region. Inside it, each country contributes its longest unbroken run of usable years, if that run is at least `r min_run` years long. Among all windows of at least `r max(ai$min_len)` years, the window and the countries covering all of it with the most person-years at 30-69 were chosen, so that the same countries are summed in every year. Deaths and person-years of an area are plain sums over its countries, with no weighting. In `r dmc[s > 0.8, .N]` of the `r nrow(ai)` areas one country holds more than 80% of the person-years at 30-69 in the window: `r dmc[s > 0.8, andl(sprintf("%s (%s, %s%%)", area, name, p1(s)))]`; `r dmc[k == 1, andl(sprintf("%s is %s alone", area, name))]`. In these areas a peak of the area series is a peak of that country.
+
+*Exact rule* (details in 'Usability rule' and 'Windows' above, Tables 1.2-1.3, Figure D1).
+
+- Usability: the first failing criterion is recorded, in this order: population missing, group not isolable (a needed group cannot be separated), codes do not add up (Causes above), ill-defined above the limit (`output/data_build/country_coverage.csv`).
+- Longest run: interpolated and composite years count; ties go to the later run. Candidates: `r nrow(cn1)` eligible countries with a run of at least `r min_run` years.
+- Window: at least `r max(ai$min_len)` years (`r ai[min_len < max(min_len), andl(sprintf("%s: %d, the longest run of its candidates", area, min_len))]`); ties go to the longer, then the later window; the alternatives are kept in `output/data_build/area_windows.csv`.
+- Pooling: deaths and person-years summed by year, sex, age and cause group over the countries of the set; no standardisation or weighting at this step (`data/derived/area_series.rds`).
+
+*Not done.* The choice of window does not look at the flags (changes of List, filled years); alternative windows are recorded, not used.
+
+`r cdl("areas")`
+
+### Where the details are
+
+- `r ntl`: items 1-3 (sources), 4-7 (countries, eligibility, composites), 8-15 (cause groups and changes of List), 16-19 (deaths and population), 20-25 (usability, runs, areas), 26-31 (COPD flag, sub-groups capped, territory changes, window alternatives, changes of List inside the windows), 84 (UN WPP), 85 (WHO data-quality assessment), 92 (known issues) and 107 (this section).
+- `r stl`: items 1 (ill-defined causes, F8), 4 (gaps) and 7 (changes of List).
+- Dictionaries (one row per column of each file): `r andl(lk(c("data/dict/dictionary.csv", "data/derived/dictionary.csv", "output/data_build/dictionary.csv")))`; cause groups `r lk("data/dict/who_cause_groups.csv")`; codes and eligibility `r lk("data/dict/areas.csv")`.
+
+### Code map
+
+```{r t-code}
+hl  <- function(x) vapply(strsplit(x, ";"), function(z) paste(ha(z), collapse = ", "), "")
+cmx <- cm[, .(Step = stp[sec], Script = f, `Function or block` = gsub("`", "", what), Lines = sub("^lines? ", "", ln), Writes = fifelse(is.na(out), "", gsub(";", ", ", out)))]
+kp(cmx, "Step", paste("Table 1.8. Code map: the steps of Section 1.1, the script, function or block and lines that do them (read from the scripts at render time) and the files they write;",
+                      if (gh()) "the script names open the files on GitHub, the line numbers the code in the appendix of this page (data-build scripts) or on GitHub" else "the links open the files from report/"),
+   html = cm[, .(Script = hl(f), `Function or block` = gsub("`([^`]+)`", "<code>\\1</code>", what), Lines = lnh(f, i, j, sub("^lines? ", "", ln)),
+                 Writes = fifelse(is.na(out), "", hl(out)))])
+```

@@ -1,0 +1,22 @@
+path,public_path,component,description
+.gitattributes,.gitattributes,1,Line endings (LF) and binary files
+.gitignore,.gitignore,1,Files kept out of Git
+.here,.here,1,Project root marker for here::here()
+LICENSE,LICENSE,1,Licence
+docs/README_public.md,README.md,1,README of the public repository
+code/functions_pm.R,code/functions_pm.R,1,"Shared helpers: paths, WHO raw files, age formats, gap filling, dictionaries"
+code/00_session.R,code/00_session.R,1,R and package versions
+code/01_areas.R,code/01_areas.R,1,"Country codes, UN M49 regions, WHO data-quality rating, eligibility"
+code/02_cause_groups.R,code/02_cause_groups.R,1,Cause groups across ICD revisions and WHO cause lists
+code/03_who_deaths.R,code/03_who_deaths.R,1,"Raw files to deaths by year, sex, age and cause; checks; population"
+code/04_area_series.R,code/04_area_series.R,1,"Usable country-years, stable country sets and windows, area series"
+code/08_helpers.R,code/08_helpers.R,1,"Formatters, tables and links shared by the report and the page"
+code/08_data.Rmd,code/08_data.Rmd,1,"Section 1 of the report: data and data quality (child of the report and the page)"
+code/08_who_processing.Rmd,code/08_who_processing.Rmd,1,Section 1.1: how the WHO Mortality Database was processed (child of the report and the page)
+code/16_docs.R,code/16_docs.R,1,Renders the page docs/index.html
+code/17_publish.R,code/17_publish.R,1,Copies the published files to a clone of the public repository
+docs/who_mortality_harmonisation.Rmd,docs/who_mortality_harmonisation.Rmd,1,Source of the page
+docs/index.html,docs/index.html,1,The page (GitHub Pages)
+docs/.nojekyll,docs/.nojekyll,1,GitHub Pages: serve docs/ as is
+docs/dictionary.csv,docs/dictionary.csv,1,Description of the files of docs/
+docs/published.csv,docs/published.csv,1,This list

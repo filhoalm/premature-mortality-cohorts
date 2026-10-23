@@ -1,0 +1,104 @@
+---
+title: "WHO Mortality Database: data harmonisation for the premature mortality project"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{css, echo = FALSE}
+details { margin: 0 0 14px; border: 1px solid #c8d5e1; border-radius: 4px; padding: 8px 12px; }
+summary { cursor: pointer; overflow-wrap: break-word; }
+details div.sourceCode { max-height: 720px; overflow: auto; font-size: 12px; }
+pre.numberSource code > span.hl { background: #fff1a8; }
+.main-container table.table { display: block; max-width: 100%; overflow-x: auto; }
+td a.cl { white-space: nowrap; }
+```
+
+```{r setup, include = FALSE}
+## Web page of Section 1 of the report, the data and how the WHO Mortality Database was processed: the children it shares with
+## the report (code/08_data.Rmd, code/08_who_processing.Rmd) with links to GitHub (link_base) and the code lines of the data
+## build inside the page, then the R code of the data build (numbered lines, ids of code/08_helpers.R cid()) and the
+## dictionaries. Rendered by code/16_docs.R to docs/index.html (GitHub Pages); tables are not saved (td = NULL: the report
+## alone writes output/report_tables/)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, out.width = "100%")
+source(here::here("code", "functions_pm.R"))
+repo <- "https://github.com/filhoalm/premature-mortality-cohorts"
+link_base <- paste0(repo, "/blob/main/"); td <- NULL
+pub_files <- fread(here::here("docs", "published.csv"))$public_path                 # files of the public repository: the only ones linked
+source(here::here("code", "08_helpers.R"), local = knitr::knit_global())
+dct <- c("data/dict/who_cause_groups.csv", "data/dict/areas.csv"); dd <- fread(here::here("data", "dict", "dictionary.csv"))
+## the analyses of the report, from its headings: Results 1-3 and Module B
+rl  <- readLines(here::here("code", "08_report.Rmd"), encoding = "UTF-8")
+rh  <- grep("^# [0-9]+ Result [0-9]: ", rl, value = TRUE); mb <- grep("^## [0-9.]+ .*\\(Module B\\)$", rl, value = TRUE)
+rsd <- sprintf("%s (%s, report Section %s)", sub("^# [0-9]+ (Result [0-9]):.*", "\\1", rh), sub(".*: ", "", rh), sub("^# ([0-9]+) .*", "\\1", rh))
+mbd <- sub("^## ([0-9.]+) (.)(.*) \\(Module B\\)$", "\\L\\2\\E\\3, report Section \\1", mb, perl = TRUE)
+li  <- readLines(here::here("LICENSE"), encoding = "UTF-8"); lic <- function(k) sub(",$", "", sub("^[^:]*: ", "", grep(k, li, value = TRUE)[1]))
+b64 <- function(f) { x <- readBin(f, "raw", file.size(f)); xfun::base64_encode(x[x != as.raw(13)]) }   # LF line endings, as in Git
+```
+
+# About this page
+
+This page documents how the WHO Mortality Database was harmonised and cleaned for the project *Premature mortality in successive birth cohorts across world regions*: the data used and the rules that select them (Section 1), then, step by step, the raw files read, the countries kept, ages, causes across ICD revisions, coding changes, ill-defined causes, gaps, peaks, population, and how countries were pooled into areas (Section 1.1). It is Section 1 of the project report (`r lk("code/08_report.Rmd")`, rendered by `r lk("code/08_render.R")`), built from the same sources, `r lk("code/08_data.Rmd")` and `r lk("code/08_who_processing.Rmd")`, so the two give the same text and numbers; only the links, the notes on them and the layout of the *Code:* lines differ. Every number is computed from the output files of the project when the page is rendered (`r lk("code/16_docs.R")`).
+
+The report itself is not published online, as its results are unpublished. Section, table and figure numbers are those of the report, and its other parts are cited as in the report, so that the two documents stay identical: Sections 2-8 and the figures other than D1 are in the report only. The analyses of the report are cited as `r andl(rsd)`; Module B is one of the replicated European analyses (`r mbd`).
+
+**Links.** The *Code:* lines that end each part of Section 1.1 and the code map (Table 1.8) point to the R code that does each step. For the scripts of the data build (`r andl(sprintf("<code>%s</code>", ap))`), shown in full in the appendix, the line numbers open the code on this page with those lines highlighted; for the page's own sources they open GitHub. File names link to the files of the public repository ([`r sub("^https://github.com/", "", repo)`](`r repo`)), which holds this first component of the project: the code of the data harmonisation and this page (`r lk("docs/published.csv")`). Data, outputs and the scripts of the analyses are not published yet and are named without a link. The appendix also describes the columns of the two dictionaries that drive the build.
+
+**Data and status.** Deaths and population: [WHO Mortality Database](https://www.who.int/data/data-collection-tools/who-mortality-database) (`r sub(".*, ", "", src)`), with population completed from the [UN World Population Prospects](https://population.un.org/wpp/); the raw files are not redistributed. Work in progress: the numbers may change; please contact the author before citing or reusing them. Licence (`r lk("LICENSE")`, to be confirmed): code `r lic("^Code ")`, data outputs `r lic("^Data outputs ")`; check the WHO Mortality Database terms of use before sharing derived data.
+
+```{r data, child = here::here("code", "08_data.Rmd")}
+```
+
+```{r who-processing, child = here::here("code", "08_who_processing.Rmd")}
+```
+
+# Appendix: R code of the harmonisation
+
+The scripts below build the harmonised series from the WHO raw files. They run in this order from the project root, each sourcing `code/functions_pm.R`: `r andl(sprintf("<code>Rscript %s</code>", ap[-1]))` (`r lk("README.md")`). They are shown in full, with line numbers, as read from the scripts when this page was rendered; they are not run here. The other scripts linked above, `r os <- setdiff(unique(cm$f), ap); andl(lk(os[order(grepl("^Study/", os), os)]))`, use the harmonised series in the analyses; they will be published with their components.
+
+```{r appendix, results = "asis"}
+for (p in ap) { x <- readLines(here::here(p), encoding = "UTF-8"); fe <- strrep("~", max(3L, nchar(unlist(regmatches(x, gregexpr("~+", x))))) + 1L)   # fence longer than any ~ run
+  h1 <- sub("[.]$", "", sub("^## ", "", x[1])); w <- grep("^## Writes ", x); k <- w                  # title (first header line); files written (## Writes, continued)
+  if (length(w)) while (k < length(x) && grepl("^##\\s{4,}", x[k + 1])) k <- k + 1L
+  ds <- paste0(if (length(w)) sub("[:.].*", "", sub(" \\(Step [0-9]+\\)", "", h1)) else h1, "; steps ", andl(sprintf("'%s'", stp[unique(cm[f == p, sec])])), " of Table 1.8",
+               if (length(w)) paste0("; writes ", gsub(",\\s*(?=[^{]*\\})", ", ", paste(trimws(sub("^## (Writes )?", "", x[w:k])), collapse = " "), perl = TRUE)) else "")
+  cat(sprintf("<details>\n<summary><code>%s</code>: %s (%d lines; %s)</summary>\n", p, ds, length(x), ha(p, "on GitHub")),
+      sprintf("%s {#%s .r .numberLines}", fe, cid(p)), x, fe, "\n</details>\n", sep = "\n") }
+```
+
+## Dictionaries
+
+The cause groups and the countries come from two dictionaries, written by `code/02_cause_groups.R` and `code/01_areas.R`; every column is described in `r lk("data/dict/dictionary.csv")`.
+
+```{r dicts, results = "asis"}
+for (f in dct) { x <- fread(here::here(f), colClasses = "character"); v <- dd[file %like% basename(f) & variable != "(provenance)", .(Column = variable, Description = description, Unit = unit)]
+  cat(if (f %in% pub_files) sprintf('\n%s: %s rows, %d columns (%s; <a download="%s" href="data:text/csv;base64,%s">download the CSV</a>).\n\n', lk(f), fn(nrow(x)), ncol(x),
+                                    ha(f, "on GitHub"), basename(f), b64(here::here(f)))
+      else sprintf("\n<code>%s</code>: %s rows, %d columns; not published (rebuilt by `%s`).\n\n", f, fn(nrow(x)), ncol(x), fifelse(f %like% "cause", "code/02_cause_groups.R", "code/01_areas.R")))
+  cat(kt(v, sprintf("Columns of %s (%s)", f, "data/dict/dictionary.csv"))) }
+```
+
+```{js, echo = FALSE}
+// line links (class cl, data-to = last line): open the folded script, highlight its lines and scroll to them; also for a
+// link to a line from outside the page (index.html#code-<script>-<line>) and for the back button
+(function () {
+  function go(id, to) {
+    var el = document.getElementById(id), m = /^(code-.+)-(\d+)$/.exec(id); if (!el || !m) return null;
+    for (var d = el.closest("details"); d; d = d.parentElement ? d.parentElement.closest("details") : null) d.open = true;
+    document.querySelectorAll("span.hl").forEach(function (s) { s.classList.remove("hl"); });
+    for (var i = +m[2]; i <= Math.max(+m[2], to || 0); i++) { var s = document.getElementById(m[1] + "-" + i); if (s) s.classList.add("hl"); }
+    return el;
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("a.cl"), el = a && go(a.getAttribute("href").slice(1), +a.getAttribute("data-to")); if (!el) return;
+    e.preventDefault(); history.pushState(null, "", a.getAttribute("href")); el.scrollIntoView({ block: "center" });
+  });
+  function hash() { var el = go(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView({ block: "center" }); }
+  window.addEventListener("load", hash); window.addEventListener("popstate", hash);
+})();
+```
